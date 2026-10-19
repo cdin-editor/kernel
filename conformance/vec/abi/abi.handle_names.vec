@@ -1,0 +1,13 @@
+vector abi.handle_names covers ABI-004 ABI-006 ABI-017 ERR-001 ERR-003
+  create allocator=counting
+  expect CDIN_OK
+  create allocator=counting
+  expect CDIN_OK
+  destroy handle=k1
+  expect CDIN_OK
+  create allocator=counting
+  expect CDIN_OK
+  destroy handle=k3
+  expect CDIN_OK
+  destroy handle=k2
+  expect CDIN_OK

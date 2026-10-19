@@ -1,0 +1,8 @@
+vector abi.no_memory covers ABI-006 ABI-014 ABI-017 KERNEL-009 ERR-001 ERR-003 ERR-005
+  create allocator=counting
+  expect CDIN_OK
+  fail_alloc_after allocator=counting n=0
+  create allocator=counting
+  expect CDIN_NO_MEMORY
+  destroy handle=k1
+  expect CDIN_OK
