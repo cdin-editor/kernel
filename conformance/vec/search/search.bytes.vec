@@ -1,0 +1,31 @@
+vector search.bytes.exact covers SEARCH-001 SEARCH-008 SEARCH-041
+  create_doc bytes="hello\xFFhello"
+  expect CDIN_OK handle=k1
+  search handle=k1 pattern="\xFF" mode=bytes direction=forward from=0
+  expect CDIN_OK count=1 matches="5:6" version=0
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector search.bytes.across_regions covers SEARCH-041
+  create_doc bytes="ab\xFFcd"
+  expect CDIN_OK handle=k1
+  search handle=k1 pattern="ab\xFFcd" mode=bytes direction=forward from=0
+  expect CDIN_OK count=1 matches="0:5" version=0
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector search.bytes.invalid_pattern covers SEARCH-014 SEARCH-041
+  create_doc bytes="hello"
+  expect CDIN_OK handle=k1
+  search handle=k1 pattern="" mode=bytes direction=forward from=0
+  expect CDIN_INVALID_ARGUMENT
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector search.bytes.backward covers SEARCH-003 SEARCH-041
+  create_doc bytes="ab\xFFab"
+  expect CDIN_OK handle=k1
+  search handle=k1 pattern="ab" mode=bytes direction=backward from=5
+  expect CDIN_OK count=2 matches="3:5 0:2" version=0
+  close_doc handle=k1
+  expect CDIN_OK

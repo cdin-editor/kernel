@@ -1,0 +1,191 @@
+vector text.eol.lf_only covers TEXT-002 TEXT-020 TEXT-021
+  create_doc bytes="a\x0Ab\x0Ac"
+  expect CDIN_OK handle=k1
+  line_count handle=k1
+  expect CDIN_OK count=3
+  line_start handle=k1 line=0
+  expect CDIN_OK offset=0
+  line_start handle=k1 line=1
+  expect CDIN_OK offset=2
+  line_start handle=k1 line=2
+  expect CDIN_OK offset=4
+  line_from_offset handle=k1 offset=3
+  expect CDIN_OK line=1 col=1
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector text.eol.crlf_only covers TEXT-002 TEXT-020 TEXT-021
+  create_doc bytes="a\x0D\x0Ab\x0D\x0Ac"
+  expect CDIN_OK handle=k1
+  line_count handle=k1
+  expect CDIN_OK count=3
+  line_start handle=k1 line=0
+  expect CDIN_OK offset=0
+  line_start handle=k1 line=1
+  expect CDIN_OK offset=3
+  line_start handle=k1 line=2
+  expect CDIN_OK offset=6
+  line_from_offset handle=k1 offset=4
+  expect CDIN_OK line=1 col=1
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector text.eol.cr_only covers TEXT-002 TEXT-020 TEXT-021
+  create_doc bytes="a\x0Db\x0Dc"
+  expect CDIN_OK handle=k1
+  line_count handle=k1
+  expect CDIN_OK count=3
+  line_start handle=k1 line=0
+  expect CDIN_OK offset=0
+  line_start handle=k1 line=1
+  expect CDIN_OK offset=2
+  line_start handle=k1 line=2
+  expect CDIN_OK offset=4
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector text.eol.mixed covers TEXT-002 TEXT-003 TEXT-020 TEXT-021 TEXT-022
+  create_doc bytes="a\x0Ab\x0Dc\x0D\x0Ad"
+  expect CDIN_OK handle=k1
+  line_count handle=k1
+  expect CDIN_OK count=4
+  line_start handle=k1 line=0
+  expect CDIN_OK offset=0
+  line_start handle=k1 line=1
+  expect CDIN_OK offset=2
+  line_start handle=k1 line=2
+  expect CDIN_OK offset=4
+  line_start handle=k1 line=3
+  expect CDIN_OK offset=7
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector text.eol.no_final_terminator covers TEXT-023
+  create_doc bytes="a\x0Ab"
+  expect CDIN_OK handle=k1
+  line_count handle=k1
+  expect CDIN_OK count=2
+  line_start handle=k1 line=1
+  expect CDIN_OK offset=2
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector text.eol.split_crlf covers TEXT-020 TEXT-021
+  create_doc bytes="a\x0D\x0Ab"
+  expect CDIN_OK handle=k1
+  replace handle=k1 start=1 end=2 bytes="" expected_version=0
+  expect CDIN_OK new_version=1 start=1 removed=1 inserted=0 new_length=3
+  read handle=k1 start=0 end=3
+  expect CDIN_OK data="a\x0Ab"
+  line_count handle=k1
+  expect CDIN_OK count=2
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector text.eol.empty_document covers TEXT-020 TEXT-021 TEXT-022 TEXT-023
+  create_doc
+  expect CDIN_OK handle=k1
+  line_count handle=k1
+  expect CDIN_OK count=1
+  line_start handle=k1 line=0
+  expect CDIN_OK offset=0
+  eol_style handle=k1
+  expect CDIN_OK style=none
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector text.eol.final_empty_line covers TEXT-021 TEXT-023
+  create_doc bytes="a\x0A"
+  expect CDIN_OK handle=k1
+  line_count handle=k1
+  expect CDIN_OK count=2
+  line_start handle=k1 line=1
+  expect CDIN_OK offset=2
+  line_from_offset handle=k1 offset=2
+  expect CDIN_OK line=1 col=0
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector text.eol.split_crlf_pair covers TEXT-020 TEXT-021
+  create_doc bytes="a\x0D\x0Ab"
+  expect CDIN_OK handle=k1
+  line_count handle=k1
+  expect CDIN_OK count=2
+  replace handle=k1 start=2 end=2 bytes="\x0A" expected_version=0
+  expect CDIN_OK new_version=1 start=2 removed=0 inserted=1 new_length=5
+  read handle=k1 start=0 end=5
+  expect CDIN_OK data="a\x0D\x0A\x0Ab"
+  line_count handle=k1
+  expect CDIN_OK count=3
+  line_start handle=k1 line=1
+  expect CDIN_OK offset=3
+  line_start handle=k1 line=2
+  expect CDIN_OK offset=4
+  eol_style handle=k1
+  expect CDIN_OK style=mixed
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector text.eol.style_lf covers TEXT-022
+  create_doc bytes="a\x0Ab\x0Ac"
+  expect CDIN_OK handle=k1
+  eol_style handle=k1
+  expect CDIN_OK style=lf
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector text.eol.style_crlf covers TEXT-020 TEXT-022
+  create_doc bytes="a\x0D\x0Ab"
+  expect CDIN_OK handle=k1
+  eol_style handle=k1
+  expect CDIN_OK style=crlf
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector text.eol.style_cr covers TEXT-020 TEXT-022
+  create_doc bytes="a\x0Db"
+  expect CDIN_OK handle=k1
+  eol_style handle=k1
+  expect CDIN_OK style=cr
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector text.eol.style_mixed covers TEXT-002 TEXT-003 TEXT-022
+  create_doc bytes="a\x0Ab\x0Dc\x0D\x0Ad"
+  expect CDIN_OK handle=k1
+  eol_style handle=k1
+  expect CDIN_OK style=mixed
+  line_count handle=k1
+  expect CDIN_OK count=4
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector text.eol.style_follows_edit covers TEXT-021 TEXT-022
+  create_doc bytes="a\x0Ab"
+  expect CDIN_OK handle=k1
+  eol_style handle=k1
+  expect CDIN_OK style=lf
+  replace handle=k1 start=1 end=1 bytes="\x0D" expected_version=0
+  expect CDIN_OK new_version=1
+  eol_style handle=k1
+  expect CDIN_OK style=crlf
+  replace handle=k1 start=2 end=3 bytes="" expected_version=1
+  expect CDIN_OK new_version=2
+  eol_style handle=k1
+  expect CDIN_OK style=cr
+  line_count handle=k1
+  expect CDIN_OK count=2
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector text.eol.join_crlf covers TEXT-020 TEXT-021
+  create_doc bytes="a\x0Ab"
+  expect CDIN_OK handle=k1
+  replace handle=k1 start=1 end=1 bytes="\x0D" expected_version=0
+  expect CDIN_OK new_version=1 start=1 removed=0 inserted=1 new_length=4
+  read handle=k1 start=0 end=4
+  expect CDIN_OK data="a\x0D\x0Ab"
+  line_count handle=k1
+  expect CDIN_OK count=2
+  close_doc handle=k1
+  expect CDIN_OK

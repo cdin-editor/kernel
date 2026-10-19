@@ -1,0 +1,137 @@
+vector pos.convert.byte_to_codepoint covers POS-001 POS-031
+  create_doc bytes="hello"
+  expect CDIN_OK handle=k1
+  byte_to_codepoint handle=k1 offset=0
+  expect CDIN_OK codepoint=0
+  byte_to_codepoint handle=k1 offset=5
+  expect CDIN_OK codepoint=5
+  codepoint_to_byte handle=k1 codepoint=3
+  expect CDIN_OK offset=3
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector pos.convert.utf8_multibyte covers POS-001 POS-031
+  create_doc bytes="café"
+  expect CDIN_OK handle=k1
+  byte_to_codepoint handle=k1 offset=0
+  expect CDIN_OK codepoint=0
+  byte_to_codepoint handle=k1 offset=3
+  expect CDIN_OK codepoint=3
+  byte_to_codepoint handle=k1 offset=5
+  expect CDIN_OK codepoint=4
+  codepoint_to_byte handle=k1 codepoint=4
+  expect CDIN_OK offset=5
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector pos.convert.line_col covers POS-013
+  create_doc bytes="hello\x0Aworld"
+  expect CDIN_OK handle=k1
+  byte_to_line handle=k1 offset=0
+  expect CDIN_OK line=0 col=0
+  byte_to_line handle=k1 offset=6
+  expect CDIN_OK line=1 col=0
+  byte_to_line handle=k1 offset=8
+  expect CDIN_OK line=1 col=2
+  line_to_byte handle=k1 line=1
+  expect CDIN_OK offset=6
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector pos.check.valid_boundary covers POS-010 POS-011 POS-020
+  create_doc bytes="caf\xC3\xA9"
+  expect CDIN_OK handle=k1
+  check_position handle=k1 offset=0
+  expect CDIN_OK valid=1
+  check_position handle=k1 offset=3
+  expect CDIN_OK valid=1
+  check_position handle=k1 offset=5
+  expect CDIN_OK valid=1
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector pos.check.end_of_document covers POS-011
+  create_doc bytes="ab"
+  expect CDIN_OK handle=k1
+  check_position handle=k1 offset=2
+  expect CDIN_OK valid=1
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector pos.check.out_of_range covers POS-011
+  create_doc bytes="ab"
+  expect CDIN_OK handle=k1
+  check_position handle=k1 offset=3
+  expect CDIN_OUT_OF_RANGE
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector pos.check.inside_sequence covers POS-020 POS-031
+  create_doc bytes="\xE2\x82\xAC"
+  expect CDIN_OK handle=k1
+  check_position handle=k1 offset=1
+  expect CDIN_INVALID_POSITION
+  check_position handle=k1 offset=2
+  expect CDIN_INVALID_POSITION
+  byte_to_codepoint handle=k1 offset=2
+  expect CDIN_INVALID_POSITION
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector pos.check.raw_region_any_offset covers POS-021 POS-031
+  create_doc bytes="\xE2\x82\xAC\xFFz"
+  expect CDIN_OK handle=k1
+  check_position handle=k1 offset=3
+  expect CDIN_OK valid=1
+  check_position handle=k1 offset=4
+  expect CDIN_OK valid=1
+  check_position handle=k1 offset=5
+  expect CDIN_OK valid=1
+  byte_to_codepoint handle=k1 offset=4
+  expect CDIN_OK codepoint=2
+  byte_to_codepoint handle=k1 offset=5
+  expect CDIN_OK codepoint=3
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector pos.codepoint.raw_bytes_are_units covers POS-031 POS-002
+  create_doc bytes="a\xFF\xFFb"
+  expect CDIN_OK handle=k1
+  byte_to_codepoint handle=k1 offset=1
+  expect CDIN_OK codepoint=1
+  byte_to_codepoint handle=k1 offset=2
+  expect CDIN_OK codepoint=2
+  byte_to_codepoint handle=k1 offset=3
+  expect CDIN_OK codepoint=3
+  codepoint_to_byte handle=k1 codepoint=2
+  expect CDIN_OK offset=2
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector pos.line.after_edit covers POS-013 TEXT-021
+  create_doc bytes="a\x0Ab\x0Ac"
+  expect CDIN_OK handle=k1
+  line_count handle=k1
+  expect CDIN_OK count=3
+  replace handle=k1 start=1 end=2 bytes="" expected_version=0
+  expect CDIN_OK new_version=1 start=1 removed=1 inserted=0 new_length=4
+  line_count handle=k1
+  expect CDIN_OK count=2
+  line_start handle=k1 line=1
+  expect CDIN_OK offset=3
+  byte_to_line handle=k1 offset=3
+  expect CDIN_OK line=1 col=0
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector pos.convert.position_valid covers POS-020 POS-021
+  create_doc bytes="abc"
+  expect CDIN_OK handle=k1
+  check_position handle=k1 offset=0
+  expect CDIN_OK valid=1
+  check_position handle=k1 offset=1
+  expect CDIN_OK valid=1
+  check_position handle=k1 offset=3
+  expect CDIN_OK valid=1
+  close_doc handle=k1
+  expect CDIN_OK
