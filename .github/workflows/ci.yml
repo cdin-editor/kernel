@@ -21,23 +21,30 @@ jobs:
           - { os: windows-latest, cc: msys2-ucrt64, tsan: false }
     steps:
       - uses: actions/checkout@v4
+
       - uses: msys2/setup-msys2@v2
         if: matrix.cc == 'msys2-ucrt64'
         with:
           msystem: UCRT64
-          install: mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-make
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            make
+
       - name: Build and run vectors (gcc)
         if: matrix.cc == 'gcc'
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc clang make
           make CC=gcc check
+
       - name: Build and run vectors (clang)
         if: matrix.cc == 'clang'
         run: |
           sudo apt-get update
           sudo apt-get install -y clang make
           make CC=clang check
+
       - name: Build and run vectors (MSYS2 UCRT64)
         if: matrix.cc == 'msys2-ucrt64'
         shell: msys2 {0}
