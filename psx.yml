@@ -1,0 +1,4 @@
+name: cdin-kernel
+version: 0.1.0
+description: Generic text engine with a C ABI
+license: GPL-3.0-or-later

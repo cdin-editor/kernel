@@ -1,0 +1,77 @@
+name: CI
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+permissions:
+  contents: read
+
+jobs:
+  # The conformance gate. `make check` exits non-zero when a vector fails, has a
+  # syntax error, or when no vector ran at all.
+  conformance:
+    name: check (${{ matrix.os }}, ${{ matrix.cc }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, cc: gcc, tsan: true }
+          - { os: ubuntu-latest, cc: clang, tsan: true }
+          - { os: windows-latest, cc: msys2-ucrt64, tsan: false }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        if: matrix.cc == 'msys2-ucrt64'
+        with:
+          msystem: UCRT64
+          install: mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-make
+      - name: Build and run vectors (gcc)
+        if: matrix.cc == 'gcc'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc clang make
+          make CC=gcc check
+      - name: Build and run vectors (clang)
+        if: matrix.cc == 'clang'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang make
+          make CC=clang check
+      - name: Build and run vectors (MSYS2 UCRT64)
+        if: matrix.cc == 'msys2-ucrt64'
+        shell: msys2 {0}
+        run: $env:MSYSTEM -ucrt64 -defterm -here -no-start -clang off -nowarning -c "make CC=gcc check"
+
+  sanitizers:
+    name: asan (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y gcc make
+      - name: ASan + UBSan on every vector
+        run: make CC=gcc asan
+
+  threads:
+    name: tsan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y gcc make
+      - name: TSan on every vector
+        run: make CC=gcc tsan
+
+  headers:
+    name: header compiles as C and C++
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y g++ make
+      - name: C11
+        run: mkdir -p build && printf '#include "cdin/kernel.h"\nint main(void){return 0;}\n' > build/hdr.c && gcc -std=c11 -Wall -Wextra -Wpedantic -Werror -Iinclude -c build/hdr.c -o build/hdr.o
+      - name: C++17
+        run: printf '#include "cdin/kernel.h"\nint main(){return 0;}\n' > build/hdr.cpp && g++ -std=c++17 -Wall -Wextra -Wpedantic -Werror -Iinclude -c build/hdr.cpp -o build/hdr.o

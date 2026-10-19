@@ -1,0 +1,24 @@
+name: Feature Request
+description: New API, capability or improvement
+title: "[FEATURE] "
+labels: ["enhancement"]
+body:
+  - type: input
+    id: requirement
+    attributes:
+      label: Related requirement ID
+      placeholder: DOC-001, EDIT-002
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+    validations:
+      required: true
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Motivation
+    validations:
+      required: true
