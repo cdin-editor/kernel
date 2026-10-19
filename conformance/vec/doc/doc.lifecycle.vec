@@ -1,0 +1,37 @@
+vector doc.lifecycle.create_empty covers DOC-001 DOC-002 DOC-003 DOC-004 DOC-010
+  create_doc
+  expect CDIN_OK handle=k1
+  version handle=k1
+  expect CDIN_OK version=0
+  len handle=k1
+  expect CDIN_OK length=0
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector doc.lifecycle.create_from_bytes covers DOC-001 DOC-002 DOC-003 DOC-021
+  create_doc bytes="hello"
+  expect CDIN_OK handle=k1
+  len handle=k1
+  expect CDIN_OK length=5
+  read handle=k1 start=0 end=5
+  expect CDIN_OK data="hello"
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector doc.lifecycle.invalid_handle covers DOC-004
+  version handle=k99
+  expect CDIN_INVALID_HANDLE
+  len handle=k99
+  expect CDIN_INVALID_HANDLE
+  read handle=k99 start=0 end=1
+  expect CDIN_INVALID_HANDLE
+  close_doc handle=k99
+  expect CDIN_INVALID_HANDLE
+
+vector doc.lifecycle.close_idempotent covers DOC-003 DOC-004
+  create_doc
+  expect CDIN_OK handle=k1
+  close_doc handle=k1
+  expect CDIN_OK
+  close_doc handle=k1
+  expect CDIN_INVALID_HANDLE
