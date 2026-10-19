@@ -1,4 +1,4 @@
-﻿/*
+/*
  * P1 regression tests: memory safety and object lifetime.
  *
  * These tests exercise the public contract and link the real kernel. They
@@ -9,6 +9,7 @@
 #include "internal.h"   /* struct doc + handle pool, for the zero-init check */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 static int failures;
 
@@ -881,6 +882,79 @@ static void test_get_last_blob(void)
           (unsigned long long)ctx.live_blocks);
 }
 
+/* Search-index regression: a cached negative result must be exact, the raw-byte
+ * shortcut must retain skipped_raw semantics, and edits must invalidate the index. */
+static void test_search_index(void)
+{
+    banner("test_search_index", "large negative search cache invalidates after edit");
+    const size_t n = TEXT_SEARCH_INDEX_MIN_BYTES;
+    uint8_t *data = (uint8_t *)malloc(n);
+    alloc_ctx ctx;
+    cdin_kernel *k = NULL;
+    cdin_doc d = 0;
+    cdin_search_request q;
+    cdin_search_result r;
+    cdin_edit_result er;
+    uint64_t ranges[2] = { UINT64_MAX, UINT64_MAX };
+    const uint8_t needle[] = "needle";
+    if (!data) { CHECK(0, "allocate large test document"); return; }
+    memset(data, 'a', n);
+    CHECK(make_kernel(&k, &ctx, ALLOC_COUNTING | ALLOC_STRICT, 8, (uint64_t)n + 64u) == CDIN_OK,
+          "create kernel");
+    if (!k) { free(data); return; }
+    CHECK(cdin_doc_create(k, data, n, &d) == CDIN_OK, "create large document");
+    free(data);
+    if (d == 0) { cdin_kernel_destroy(k); return; }
+
+    memset(&q, 0, sizeof(q));
+    q.struct_size = sizeof(q);
+    q.src = cdin_src_doc(d);
+    q.expected_version = CDIN_ANY_VERSION;
+    q.pattern = needle;
+    q.pattern_len = sizeof(needle) - 1u;
+    q.mode = CDIN_SEARCH_LITERAL;
+    q.direction = CDIN_SEARCH_FORWARD;
+    q.bound = UINT64_MAX;
+    q.limit = 1;
+    q.ranges = ranges;
+    q.ranges_capacity = 1;
+    memset(&r, 0, sizeof(r)); r.struct_size = sizeof(r);
+    CHECK(cdin_search(k, &q, &r) == CDIN_OK, "indexed negative search");
+    CHECK(r.count == 0 && r.exhausted == 1, "negative result count=%llu exhausted=%u",
+          (unsigned long long)r.count, (unsigned)r.exhausted);
+    CHECK(r.steps == 0, "negative trigram-filter result visited %llu candidate positions",
+          (unsigned long long)r.steps);
+    CHECK(r.skipped_raw == 0, "valid UTF-8 document incorrectly reported raw bytes");
+
+    /* Invalidate and rebuild the index on a document containing a raw byte;
+     * SEARCH-042 must still report that the scanned range skipped raw bytes. */
+    const uint8_t raw = 0xFFu;
+    memset(&er, 0, sizeof(er)); er.struct_size = sizeof(er);
+    CHECK(do_replace(k, d, n / 2u, n / 2u + 1u, &raw, 1u, CDIN_ANY_VERSION, 0, &er) == CDIN_OK,
+          "insert raw byte and invalidate index");
+    ranges[0] = ranges[1] = UINT64_MAX;
+    memset(&r, 0, sizeof(r)); r.struct_size = sizeof(r);
+    CHECK(cdin_search(k, &q, &r) == CDIN_OK, "indexed negative search with raw byte");
+    CHECK(r.count == 0 && r.skipped_raw == 1, "raw byte flag lost by index (count=%llu skipped_raw=%u)",
+          (unsigned long long)r.count, (unsigned)r.skipped_raw);
+
+    memset(&er, 0, sizeof(er)); er.struct_size = sizeof(er);
+    CHECK(do_replace(k, d, 0, 1, needle, sizeof(needle) - 1u, CDIN_ANY_VERSION, 0, &er) == CDIN_OK,
+          "edit invalidates cached index");
+    ranges[0] = ranges[1] = UINT64_MAX;
+    memset(&r, 0, sizeof(r)); r.struct_size = sizeof(r);
+    CHECK(cdin_search(k, &q, &r) == CDIN_OK, "search after index invalidation");
+    CHECK(r.count == 1 && ranges[0] == 0 && ranges[1] == sizeof(needle) - 1u,
+          "fresh match count=%llu range=[%llu,%llu]", (unsigned long long)r.count,
+          (unsigned long long)ranges[0], (unsigned long long)ranges[1]);
+
+    CHECK(cdin_doc_close(k, d) == CDIN_OK, "close large document");
+    CHECK(cdin_kernel_destroy(k) == CDIN_OK, "destroy kernel");
+    CHECK(alloc_violations(&ctx) == 0 && ctx.live_blocks == 0,
+          "allocator leak: %llu violation(s), %llu live", (unsigned long long)alloc_violations(&ctx),
+          (unsigned long long)ctx.live_blocks);
+}
+
 int main(int argc, char **argv)
 {
     setvbuf(stdout, NULL, _IONBF, 0); /* keep the log when a defect crashes us */
@@ -895,7 +969,8 @@ int main(int argc, char **argv)
         { "undo_atomic", test_undo_failure_atomic },
         { "ops_sweep", test_ops_failure_sweep },
         { "sweeps", test_sweeps },
-        { "get_last_blob", test_get_last_blob }
+        { "get_last_blob", test_get_last_blob },
+        { "search_index", test_search_index }
     };
     for (size_t i = 0; i < sizeof(tests) / sizeof(tests[0]); i++) {
         if (only && strcmp(only, tests[i].name) != 0) continue;

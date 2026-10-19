@@ -13,6 +13,22 @@
 #define PAT_NL 0x0Au
 #define CHUNK 65536u
 
+/* A missing byte trigram proves that an exact byte-pattern cannot occur. The
+ * index has no false negatives; a positive only means that a full scan may be
+ * needed. The acquire load pairs with the index builder's release publication. */
+static int indexed_pattern_maybe_present(const text *t, const uint8_t *p, size_t n)
+{
+    const uint8_t *bits;
+    size_t i;
+    if (!t || n < 3 || __atomic_load_n(&t->trigram_state, __ATOMIC_ACQUIRE) != 2u) return 1;
+    bits = t->trigram_bits;
+    for (i = 0; i + 2 < n; i++) {
+        uint32_t tri = ((uint32_t)p[i] << 16) | ((uint32_t)p[i + 1] << 8) | (uint32_t)p[i + 2];
+        if ((bits[tri >> 3] & (uint8_t)(1u << (tri & 7u))) == 0) return 0;
+    }
+    return 1;
+}
+
 static int cancelled(const uint32_t *c)
 {
     if (!c) return 0;
@@ -117,90 +133,100 @@ cdin_status literal_run(const text *t, const cdin_search_request *r, const uint3
         s = (size_t)from;
         scan_lo = s;
         if (plain) {
-            size_t cand_end = bound >= plen ? (size_t)bound - plen + 1 : 0;      /* candidates are s < cand_end */
-#if defined(__linux__)
-            if (plen >= 4 && s < cand_end && r->cancel == NULL &&
-                step_limit >= (uint64_t)(cand_end - s)) {
-                /* Linux's libc memmem uses a tuned linear-time string search.
-                 * Use it only when cancellation and the step budget cannot be
-                 * bypassed; otherwise preserve the incremental portable path. */
-                while (s < cand_end) {
-                    const uint8_t *q = (const uint8_t *)memmem(d + s, (size_t)(bound - s), p0, plen);
-                    size_t offset;
-                    if (!q) { steps += (uint64_t)(cand_end - s); s = cand_end; break; }
-                    offset = (size_t)(q - (d + s));
-                    steps += (uint64_t)offset + 1;
-                    s += offset;
-                    r->ranges[2 * count] = s;
-                    r->ranges[2 * count + 1] = s + plen;
-                    count++;
-                    s += plen;
-                    last_end = s;
-                    if (count == r->limit) break;
-                }
-            } else
-#endif
-            if (plen >= 4 && s < cand_end) {
-                /* Pick a byte that is rare in a small sample of this search
-                 * window. memchr is highly optimized on mainstream libc, and
-                 * anchoring on a selective byte avoids repeated full compares
-                 * when pattern[0] is common in the document. */
-                size_t freq[256] = {0};
-                size_t sample = (size_t)(bound - s);
-                size_t pivot = 0, best, i;
-                if (sample > 4096u) sample = 4096u;
-                for (i = 0; i < sample; i++) freq[d[s + i]]++;
-                best = freq[p0[0]];
-                for (i = 1; i < plen; i++) {
-                    size_t f = freq[p0[i]];
-                    if (f < best) { best = f; pivot = i; }
-                }
-                while (s < cand_end) {
-                    uint64_t room = step_limit - steps;
-                    size_t win = cand_end - s;
-                    const uint8_t *q;
-                    if (cancelled(r->cancel)) { hit_cancel = 1; break; }
-                    if (room == 0) { hit_limit = 1; break; }
-                    if (win > room) win = (size_t)room;
-                    if (win > CHUNK) win = CHUNK;
-                    q = memchr(d + s + pivot, p0[pivot], win);
-                    if (!q) { steps += win; s += win; continue; }
-                    steps += (uint64_t)(q - (d + s + pivot)) + 1;
-                    s += (size_t)(q - (d + s + pivot));
-                    if (memcmp(d + s, r->pattern, plen) == 0) {
-                        r->ranges[2 * count] = s;
-                        r->ranges[2 * count + 1] = s + plen;
-                        count++;
-                        s += plen;
-                        last_end = s;
-                        if (count == r->limit) break;
-                    } else s++;
-                }
-            } else {
-                /* libc memchr is generally optimal for short patterns. */
-                while (s < cand_end) {
-                    uint64_t room = step_limit - steps;
-                    size_t win = cand_end - s;
-                    const uint8_t *q;
-                    if (cancelled(r->cancel)) { hit_cancel = 1; break; }
-                    if (room == 0) { hit_limit = 1; break; }
-                    if (win > room) win = (size_t)room;
-                    if (win > CHUNK) win = CHUNK;
-                    q = memchr(d + s, p0[0], win);
-                    if (!q) { steps += win; s += win; continue; }
-                    steps += (uint64_t)(q - (d + s)) + 1;
-                    s = (size_t)(q - d);
-                    if (memcmp(d + s, r->pattern, plen) == 0) {
-                        r->ranges[2 * count] = s;
-                        r->ranges[2 * count + 1] = s + plen;
-                        count++;
-                        s += plen;
-                        last_end = s;
-                        if (count == r->limit) break;
-                    } else s++;
-                }
+            size_t cand_end = bound >= plen ? (size_t)bound - plen + 1 : 0; /* candidate starts are < cand_end */
+            int filtered_no_match = 0;
+
+            if (s < cand_end && r->cancel == NULL &&
+                step_limit >= (uint64_t)(cand_end - s) &&
+                !indexed_pattern_maybe_present(t, p0, plen)) {
+                /* Every match would contain each pattern trigram. A missing one
+                 * proves absence without inspecting candidate starts. */
+                s = cand_end;
+                ended = 1;
+                filtered_no_match = 1;
             }
-            ended = !hit_limit && !hit_cancel && count < r->limit;
+
+            if (!filtered_no_match) {
+#if defined(__linux__)
+                if (plen >= 4 && s < cand_end && r->cancel == NULL &&
+                    step_limit >= (uint64_t)(cand_end - s)) {
+                    /* Tuned libc search is retained as a fallback when the
+                     * trigram filter cannot prove absence. */
+                    while (s < cand_end) {
+                        const uint8_t *q = (const uint8_t *)memmem(d + s, (size_t)(bound - s), p0, plen);
+                        size_t offset;
+                        if (!q) { steps += (uint64_t)(cand_end - s); s = cand_end; break; }
+                        offset = (size_t)(q - (d + s));
+                        steps += (uint64_t)offset + 1;
+                        s += offset;
+                        r->ranges[2 * count] = s;
+                        r->ranges[2 * count + 1] = s + plen;
+                        count++;
+                        s += plen;
+                        last_end = s;
+                        if (count == r->limit) break;
+                    }
+                } else
+#endif
+                if (plen >= 4 && s < cand_end) {
+                    /* Pick a selective byte using a small sample of this window. */
+                    size_t freq[256] = {0};
+                    size_t sample = (size_t)(bound - s);
+                    size_t pivot = 0, best, i;
+                    if (sample > 4096u) sample = 4096u;
+                    for (i = 0; i < sample; i++) freq[d[s + i]]++;
+                    best = freq[p0[0]];
+                    for (i = 1; i < plen; i++) {
+                        size_t f = freq[p0[i]];
+                        if (f < best) { best = f; pivot = i; }
+                    }
+                    while (s < cand_end) {
+                        uint64_t room = step_limit - steps;
+                        size_t win = cand_end - s;
+                        const uint8_t *q;
+                        if (cancelled(r->cancel)) { hit_cancel = 1; break; }
+                        if (room == 0) { hit_limit = 1; break; }
+                        if (win > room) win = (size_t)room;
+                        if (win > CHUNK) win = CHUNK;
+                        q = memchr(d + s + pivot, p0[pivot], win);
+                        if (!q) { steps += win; s += win; continue; }
+                        steps += (uint64_t)(q - (d + s + pivot)) + 1;
+                        s += (size_t)(q - (d + s + pivot));
+                        if (memcmp(d + s, r->pattern, plen) == 0) {
+                            r->ranges[2 * count] = s;
+                            r->ranges[2 * count + 1] = s + plen;
+                            count++;
+                            s += plen;
+                            last_end = s;
+                            if (count == r->limit) break;
+                        } else s++;
+                    }
+                } else {
+                    /* libc memchr is generally optimal for short patterns. */
+                    while (s < cand_end) {
+                        uint64_t room = step_limit - steps;
+                        size_t win = cand_end - s;
+                        const uint8_t *q;
+                        if (cancelled(r->cancel)) { hit_cancel = 1; break; }
+                        if (room == 0) { hit_limit = 1; break; }
+                        if (win > room) win = (size_t)room;
+                        if (win > CHUNK) win = CHUNK;
+                        q = memchr(d + s, p0[0], win);
+                        if (!q) { steps += win; s += win; continue; }
+                        steps += (uint64_t)(q - (d + s)) + 1;
+                        s = (size_t)(q - d);
+                        if (memcmp(d + s, r->pattern, plen) == 0) {
+                            r->ranges[2 * count] = s;
+                            r->ranges[2 * count + 1] = s + plen;
+                            count++;
+                            s += plen;
+                            last_end = s;
+                            if (count == r->limit) break;
+                        } else s++;
+                    }
+                }
+                ended = !hit_limit && !hit_cancel && count < r->limit;
+            }
         } else {
             while (s < bound) {
                 size_t e = 0;
@@ -280,7 +306,9 @@ cdin_status literal_run(const text *t, const cdin_search_request *r, const uint3
 
     {   /* SEARCH-042: did the scanned window contain raw bytes? */
         int raw = 0;
-        if (literal && scan_hi > scan_lo) {
+        int valid_known = t && __atomic_load_n(&t->trigram_state, __ATOMIC_ACQUIRE) == 2u &&
+                          t->utf8_has_raw == 0u;
+        if (literal && scan_hi > scan_lo && !valid_known) {
             size_t q = scan_lo;
             while (q < scan_hi && q < tlen) {
                 size_t n = utf8_decode(d + q, tlen - q, NULL);

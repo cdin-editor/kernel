@@ -46,17 +46,20 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p benchmark-results
-          echo 'size_mib,kernel_create_s,document_load_s,line_count_s,search_no_match_s,snapshot_s,load_mib_per_s,line_count' > "benchmark-results/${SIZE_MIB}MiB.csv"
+          echo 'size_mib,kernel_create_s,document_load_s,line_count_s,search_no_match_first_s,search_no_match_min_s,search_no_match_median_s,search_no_match_max_s,snapshot_s,load_mib_per_s,line_count' > "benchmark-results/${SIZE_MIB}MiB.csv"
           ./build/bench-scale "$SIZE_MIB" | tee -a "benchmark-results/${SIZE_MIB}MiB.csv"
           # GITHUB_OUTPUT requires NAME=VALUE records; a raw CSV row is invalid.
-          IFS=, read -r size_mib kernel_create_s document_load_s line_count_s search_no_match_s snapshot_s load_mib_per_s line_count \
+          IFS=, read -r size_mib kernel_create_s document_load_s line_count_s search_first_s search_min_s search_median_s search_max_s snapshot_s load_mib_per_s line_count \
             < <(tail -n 1 "benchmark-results/${SIZE_MIB}MiB.csv")
           {
             printf 'size_mib=%s\n' "$size_mib"
             printf 'kernel_create_s=%s\n' "$kernel_create_s"
             printf 'document_load_s=%s\n' "$document_load_s"
             printf 'line_count_s=%s\n' "$line_count_s"
-            printf 'search_no_match_s=%s\n' "$search_no_match_s"
+            printf 'search_first_s=%s\n' "$search_first_s"
+            printf 'search_min_s=%s\n' "$search_min_s"
+            printf 'search_median_s=%s\n' "$search_median_s"
+            printf 'search_max_s=%s\n' "$search_max_s"
             printf 'snapshot_s=%s\n' "$snapshot_s"
             printf 'load_mib_per_s=%s\n' "$load_mib_per_s"
             printf 'line_count=%s\n' "$line_count"
@@ -70,15 +73,16 @@ jobs:
           {
             echo "## cdin-kernel benchmark — ${SIZE_MIB} MiB"
             echo
-            echo '| Size (MiB) | Kernel create (s) | Load (s) | Line count (s) | Search no-match (s) | Snapshot (s) | Load throughput (MiB/s) | Lines |'
-            echo '|---:|---:|---:|---:|---:|---:|---:|---:|'
+            echo '| Size (MiB) | Kernel create (s) | Load (s) | Line count (s) | Search first (s) | Search min (s) | Search median (s) | Search max (s) | Snapshot (s) | Load throughput (MiB/s) | Lines |'
+            echo '|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|'
             if [[ -s "benchmark-results/${SIZE_MIB}MiB.csv" ]] && [[ $(wc -l < "benchmark-results/${SIZE_MIB}MiB.csv") -ge 2 ]]; then
-              tail -n 1 "benchmark-results/${SIZE_MIB}MiB.csv" | awk -F, '{printf "| %s | %s | %s | %s | %s | %s | %s | %s |\n", $1,$2,$3,$4,$5,$6,$7,$8}'
+              tail -n 1 "benchmark-results/${SIZE_MIB}MiB.csv" | awk -F, '{printf "| %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |\n", $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11}'
             else
-              echo "| ${SIZE_MIB} | benchmark failed or produced no data | — | — | — | — | — | — |"
+              echo "| ${SIZE_MIB} | — | — | — | — | — | — | — | — | — | — |"
+              echo "Benchmark failed or produced no data for ${SIZE_MIB} MiB."
             fi
             echo
-            echo '_GitHub-hosted ubuntu-24.04 runner; one run, no CPU pinning. Treat timings as indicative, not a cross-machine performance guarantee._'
+            echo '_GitHub-hosted ubuntu-24.04 runner; load and line count are measured once, and the search first-call latency is shown separately from five repeated timings (min/median/max). The first search may build an index; CPU scheduling can still affect timings._'
             echo
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Upload CSV result

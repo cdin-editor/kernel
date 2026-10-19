@@ -278,7 +278,7 @@ cdin_status doc_replace_locked(cdin_kernel *k, cdin_doc dh, const cdin_replace_r
         k_free(k, e, sizeof *e);
         return st;
     }
-    text_splice(d->txt, req->start, req->end - req->start, req->bytes, req->len);
+    text_splice(k, d->txt, req->start, req->end - req->start, req->bytes, req->len);
     commit_finish(k, d, CK_EDIT, &cp, e, 1, req->coalesce_key, wl, out);
     return CDIN_OK;
 }
@@ -361,7 +361,7 @@ cdin_status doc_batch_locked(cdin_kernel *k, cdin_doc dh, const cdin_batch_reque
         return st;
     }
     for (i = n; i-- > 0;)
-        text_splice(d->txt, req->starts[i], req->ends[i] - req->starts[i], req->bytes[i], req->lens[i]);
+        text_splice(k, d->txt, req->starts[i], req->ends[i] - req->starts[i], req->bytes[i], req->lens[i]);
     commit_finish(k, d, CK_BATCH, &cp, e, n, 0, wl, out);
     return CDIN_OK;
 }
@@ -408,8 +408,8 @@ cdin_status history_locked(cdin_kernel *k, cdin_doc dh, const cdin_history_reque
 
     for (i = 0; i < u->n; i++) {
         const edit_rec *e = &u->edits[undo ? u->n - 1 - i : i];
-        if (undo) text_splice(d->txt, e->start, e->inserted_len, e->removed, e->removed_len);
-        else text_splice(d->txt, e->start, e->removed_len, e->inserted, e->inserted_len);
+        if (undo) text_splice(k, d->txt, e->start, e->inserted_len, e->removed, e->removed_len);
+        else text_splice(k, d->txt, e->start, e->removed_len, e->inserted, e->inserted_len);
     }
     if (req->blob_out && blob_len) memcpy(req->blob_out, blob, blob_len);
     from = d->version;

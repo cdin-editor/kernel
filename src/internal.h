@@ -59,8 +59,16 @@ typedef struct text {
     size_t nlines;
     size_t lines_cap;
     int lines_valid;
+    /* Optional exact 24-bit trigram-presence index. State: 0 absent, 1 building, 2 ready.
+     * The block is pinned while a builder runs, so edits use copy-on-write. */
+    uint8_t *trigram_bits;
+    uint32_t trigram_state;
+    uint32_t utf8_has_raw; /* valid only when trigram_state == 2 */
     uint8_t data[];      /* cap bytes */
 } text;
+
+#define TEXT_TRIGRAM_INDEX_BYTES ((size_t)1u << 21) /* 2^24 trigrams / 8 bits */
+#define TEXT_SEARCH_INDEX_MIN_BYTES ((size_t)8u * 1024u * 1024u)
 
 /* ---- history ------------------------------------------------------------------- */
 typedef struct edit_rec {
@@ -292,7 +300,11 @@ void text_release(cdin_kernel *k, text *t);
 /* Makes *slot uniquely owned with capacity >= need. Fails with NO_MEMORY, changing nothing. */
 cdin_status text_reserve(cdin_kernel *k, text **slot, size_t need);
 /* In-place splice on a uniquely owned text with enough capacity. */
-void text_splice(text *t, uint64_t start, uint64_t removed_len, const uint8_t *ins, size_t ins_len);
+void text_splice(cdin_kernel *k, text *t, uint64_t start, uint64_t removed_len, const uint8_t *ins, size_t ins_len);
+/* Called with the kernel lock held; allocates/publishes a build-in-progress marker. */
+int text_search_index_begin(cdin_kernel *k, text *t);
+/* Called without the kernel lock while the caller pins t. Publishes index + UTF-8 metadata. */
+void text_search_index_build(text *t);
 cdin_status text_pos_check(const text *t, uint64_t p);      /* OK / OUT_OF_RANGE / INVALID_POSITION */
 cdin_status text_build_lines(cdin_kernel *k, text *t);
 

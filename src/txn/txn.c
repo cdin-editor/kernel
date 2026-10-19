@@ -96,7 +96,7 @@ cdin_status txn_replace_locked(cdin_kernel *k, txn_state *tx, doc *d,
     newlen = tx->work->len - (req->end - req->start) + req->len;
     st = text_reserve(k, &tx->work, (size_t)(newlen > tx->work->len ? newlen : tx->work->len));
     if (st != CDIN_OK) { edits_free(k, &rec, 1); return st; }
-    text_splice(tx->work, req->start, req->end - req->start, req->bytes, req->len);
+    text_splice(k, tx->work, req->start, req->end - req->start, req->bytes, req->len);
     tx->edits[tx->n++] = rec;
     tx->bytes += edit_bytes(&rec) + sizeof(edit_rec);
     out->new_version = d->version;
