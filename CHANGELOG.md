@@ -5,6 +5,44 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.0] - 2026-10-20
+
+### Added
+- Initial public release of the `cdin-kernel` native C11 document-editing kernel.
+- Public C API for kernel lifecycle, document handles, byte-preserving document
+  creation and access, replacement edits, version checks, and serialization.
+- Text utilities for UTF-8 region classification, line indexing, byte/code-point
+  position conversion, and LF/CRLF/CR line-ending recognition.
+- Undo/redo history, edit coalescing, transactions, clean-state tracking, and
+  per-subscriber change notifications.
+- Immutable snapshots, concurrency controls, and graceful/abort shutdown modes.
+- Literal and byte-oriented search, including forward/backward and find-all
+  operations; unsupported regex requests return `CDIN_UNSUPPORTED`.
+- Conformance-vector runner, strict test allocator, regression/concurrency tests,
+  and build targets for sanitizer, benchmark, fuzz, and trace workflows.
+- Portable Makefile build and initial install/package support for native library
+  consumers.
+
+### Fixed
+- Memory-lifetime, allocation-failure atomicity, document-table growth, edit-tail
+  relocation, undo-history accounting, and serialization edge cases covered by
+  the regression suite.
+- CRLF line counting and line-index invalidation after edits.
+- Conformance runner parsing and isolation so vector failures produce a non-zero
+  exit status and process-scoped state does not leak between vector files.
+
+### Compatibility and limitations
+- This is an initial development release. The public API/ABI is not yet declared
+  stable; consumers should pin the exact release and expect possible breaking
+  changes before a stable 1.0.0 release.
+- Batch replacement and regex search are not implemented and return
+  `CDIN_UNSUPPORTED`.
+- Regex engine integration, complete Unicode case folding, and full Unicode
+  grapheme-cluster segmentation are not included in this release.
+- The spec and implementation still require reconciliation before claiming full
+  spec conformance. See `RELEASE-READINESS-REVIEW.md` when available in the
+  release-work bundle for the current readiness assessment.
+
 ## [Unreleased]
 
 ### Changed - P7: layered source tree, full gate green
