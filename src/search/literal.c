@@ -5,6 +5,9 @@
  *
  * Everything here is a function of the pinned block and the request; the api
  * wrapper (api/search_api.c) owns the lock, the version check and the pin. */
+#if defined(__linux__) && !defined(_GNU_SOURCE)
+#define _GNU_SOURCE 1
+#endif
 #include "internal.h"
 
 #define PAT_NL 0x0Au
@@ -115,26 +118,87 @@ cdin_status literal_run(const text *t, const cdin_search_request *r, const uint3
         scan_lo = s;
         if (plain) {
             size_t cand_end = bound >= plen ? (size_t)bound - plen + 1 : 0;      /* candidates are s < cand_end */
-            while (s < cand_end) {
-                uint64_t room = step_limit - steps;
-                size_t win = cand_end - s;
-                const uint8_t *q;
-                if (cancelled(r->cancel)) { hit_cancel = 1; break; }
-                if (room == 0) { hit_limit = 1; break; }
-                if (win > room) win = (size_t)room;
-                if (win > CHUNK) win = CHUNK;
-                q = memchr(d + s, p0[0], win);
-                if (!q) { steps += win; s += win; continue; }
-                steps += (uint64_t)(q - (d + s)) + 1;
-                s = (size_t)(q - d);
-                if (memcmp(d + s, r->pattern, plen) == 0) {
+#if defined(__linux__)
+            if (plen >= 4 && s < cand_end && r->cancel == NULL &&
+                step_limit >= (uint64_t)(cand_end - s)) {
+                /* Linux's libc memmem uses a tuned linear-time string search.
+                 * Use it only when cancellation and the step budget cannot be
+                 * bypassed; otherwise preserve the incremental portable path. */
+                while (s < cand_end) {
+                    const uint8_t *q = (const uint8_t *)memmem(d + s, (size_t)(bound - s), p0, plen);
+                    size_t offset;
+                    if (!q) { steps += (uint64_t)(cand_end - s); s = cand_end; break; }
+                    offset = (size_t)(q - (d + s));
+                    steps += (uint64_t)offset + 1;
+                    s += offset;
                     r->ranges[2 * count] = s;
                     r->ranges[2 * count + 1] = s + plen;
                     count++;
                     s += plen;
                     last_end = s;
                     if (count == r->limit) break;
-                } else s++;
+                }
+            } else
+#endif
+            if (plen >= 4 && s < cand_end) {
+                /* Pick a byte that is rare in a small sample of this search
+                 * window. memchr is highly optimized on mainstream libc, and
+                 * anchoring on a selective byte avoids repeated full compares
+                 * when pattern[0] is common in the document. */
+                size_t freq[256] = {0};
+                size_t sample = (size_t)(bound - s);
+                size_t pivot = 0, best, i;
+                if (sample > 4096u) sample = 4096u;
+                for (i = 0; i < sample; i++) freq[d[s + i]]++;
+                best = freq[p0[0]];
+                for (i = 1; i < plen; i++) {
+                    size_t f = freq[p0[i]];
+                    if (f < best) { best = f; pivot = i; }
+                }
+                while (s < cand_end) {
+                    uint64_t room = step_limit - steps;
+                    size_t win = cand_end - s;
+                    const uint8_t *q;
+                    if (cancelled(r->cancel)) { hit_cancel = 1; break; }
+                    if (room == 0) { hit_limit = 1; break; }
+                    if (win > room) win = (size_t)room;
+                    if (win > CHUNK) win = CHUNK;
+                    q = memchr(d + s + pivot, p0[pivot], win);
+                    if (!q) { steps += win; s += win; continue; }
+                    steps += (uint64_t)(q - (d + s + pivot)) + 1;
+                    s += (size_t)(q - (d + s + pivot));
+                    if (memcmp(d + s, r->pattern, plen) == 0) {
+                        r->ranges[2 * count] = s;
+                        r->ranges[2 * count + 1] = s + plen;
+                        count++;
+                        s += plen;
+                        last_end = s;
+                        if (count == r->limit) break;
+                    } else s++;
+                }
+            } else {
+                /* libc memchr is generally optimal for short patterns. */
+                while (s < cand_end) {
+                    uint64_t room = step_limit - steps;
+                    size_t win = cand_end - s;
+                    const uint8_t *q;
+                    if (cancelled(r->cancel)) { hit_cancel = 1; break; }
+                    if (room == 0) { hit_limit = 1; break; }
+                    if (win > room) win = (size_t)room;
+                    if (win > CHUNK) win = CHUNK;
+                    q = memchr(d + s, p0[0], win);
+                    if (!q) { steps += win; s += win; continue; }
+                    steps += (uint64_t)(q - (d + s)) + 1;
+                    s = (size_t)(q - d);
+                    if (memcmp(d + s, r->pattern, plen) == 0) {
+                        r->ranges[2 * count] = s;
+                        r->ranges[2 * count + 1] = s + plen;
+                        count++;
+                        s += plen;
+                        last_end = s;
+                        if (count == r->limit) break;
+                    } else s++;
+                }
             }
             ended = !hit_limit && !hit_cancel && count < r->limit;
         } else {

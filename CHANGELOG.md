@@ -49,6 +49,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Improved — forward plain-text search
+
+- Linux uses the C library's optimized `memmem` path for byte-exact forward
+  searches when there is no cancellation callback and the step budget covers
+  the full candidate window. Step-limited and cancellable operations retain the
+  incremental path.
+- Other platforms use a portable selective-byte anchor before full comparisons.
+  No public ABI or result-range semantics changed.
+
 ### Changed - P7: layered source tree, full gate green
 
 Gate green: 105 vectors (18 files), P1 (10 tests) + P3 (9 tests), ASan/UBSan
