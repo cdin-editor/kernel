@@ -14,9 +14,11 @@ WINDOWS_HOST := $(if $(filter Windows_NT,$(OS)),1,$(if $(filter MINGW% MSYS% CYG
 WINDOWS_CMD_SHELL := $(if $(filter Windows_NT,$(OS)),$(if $(filter MINGW% MSYS% CYGWIN%,$(HOST_OS)),0,1),0)
 
 # The public header is the single source of truth for the ABI version.
-ABI_MAJOR := $(shell sed -n 's/^#define CDIN_KERNEL_ABI_MAJOR \([0-9][0-9]*\)u/\1/p' include/cdin/kernel.h)
-ABI_MINOR := $(shell sed -n 's/^#define CDIN_KERNEL_ABI_MINOR \([0-9][0-9]*\)u/\1/p' include/cdin/kernel.h)
-ABI_PATCH := $(shell sed -n 's/^#define CDIN_KERNEL_ABI_PATCH \([0-9][0-9]*\)u/\1/p' include/cdin/kernel.h)
+# Avoid capture-group parentheses inside $(shell ...): GNU make parses those
+# parentheses before invoking the shell, which can break the function call.
+ABI_MAJOR := $(shell awk '$$2 == "CDIN_KERNEL_ABI_MAJOR" { value = $$3; sub(/u$$/, "", value); print value; exit }' include/cdin/kernel.h)
+ABI_MINOR := $(shell awk '$$2 == "CDIN_KERNEL_ABI_MINOR" { value = $$3; sub(/u$$/, "", value); print value; exit }' include/cdin/kernel.h)
+ABI_PATCH := $(shell awk '$$2 == "CDIN_KERNEL_ABI_PATCH" { value = $$3; sub(/u$$/, "", value); print value; exit }' include/cdin/kernel.h)
 ABI_VERSION := $(ABI_MAJOR).$(ABI_MINOR).$(ABI_PATCH)
 
 WARN    = -Wall -Wextra -Wshadow -Wconversion -Wstrict-prototypes -Wformat=2 -Wpedantic -Werror

@@ -77,11 +77,11 @@ jobs:
           make CC="$CC" clean
           make CC="$CC" all shared ffi-shared quickstart
           make CC="$CC" check
-          CC="$CC" scripts/check-public-header.sh
+          CC="$CC" bash scripts/check-public-header.sh
           stage="$PWD/build/stage"
           make CC="$CC" DESTDIR="$stage" PREFIX=/cdin install
-          CC="$CC" scripts/verify-installed.sh "$stage/cdin"
-          PACKAGE_VERSION='${{ steps.version.outputs.package_version }}' STAGED_PREFIX="$stage/cdin" scripts/package-release.sh
+          CC="$CC" bash scripts/verify-installed.sh "$stage/cdin"
+          PACKAGE_VERSION='${{ steps.version.outputs.package_version }}' STAGED_PREFIX="$stage/cdin" bash scripts/package-release.sh
 
       - name: Build all library forms, run tests, and check installed consumers (Windows UCRT64)
         if: runner.os == 'Windows'
@@ -93,11 +93,11 @@ jobs:
           make OS= SHELL=/usr/bin/bash CC=gcc clean
           make OS= SHELL=/usr/bin/bash CC=gcc all shared ffi-shared quickstart
           make OS= SHELL=/usr/bin/bash CC=gcc check
-          CC=gcc CXX=g++ scripts/check-public-header.sh
+          CC=gcc CXX=g++ bash scripts/check-public-header.sh
           stage="$PWD/build/stage"
           make OS= SHELL=/usr/bin/bash CC=gcc DESTDIR="$stage" PREFIX=/cdin install
-          CC=gcc scripts/verify-installed.sh "$stage/cdin"
-          PACKAGE_VERSION="$PACKAGE_VERSION" STAGED_PREFIX="$stage/cdin" scripts/package-release.sh
+          CC=gcc bash scripts/verify-installed.sh "$stage/cdin"
+          PACKAGE_VERSION="$PACKAGE_VERSION" STAGED_PREFIX="$stage/cdin" bash scripts/package-release.sh
 
       - name: Upload platform package and checksum
         uses: actions/upload-artifact@v7
