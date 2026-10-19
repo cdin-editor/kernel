@@ -22,7 +22,7 @@ case "$host" in
     [[ -x "$package_root/install.sh" ]] || { echo "install.sh missing or not executable" >&2; exit 1; }
     bash "$package_root/install.sh" --prefix "$prefix"
     EXPECTED_PACKAGE_VERSION="$expected_version" \
-      "$repo_root/scripts/verify-installed.sh" "$prefix"
+      bash "$repo_root/scripts/verify-installed.sh" "$prefix"
     ;;
   MINGW*|MSYS*|CYGWIN*)
     command -v unzip >/dev/null 2>&1 || { echo "unzip is required to test the release ZIP" >&2; exit 2; }
@@ -40,7 +40,7 @@ case "$host" in
     [[ -f "$prefix/bin/cdin_kernel.dll" ]] || { echo "installed runtime DLL missing" >&2; exit 1; }
     export PATH="$prefix/bin:$PATH"
     EXPECTED_PACKAGE_VERSION="$expected_version" \
-      "$repo_root/scripts/verify-installed.sh" "$prefix"
+      bash "$repo_root/scripts/verify-installed.sh" "$prefix"
     ;;
   *)
     echo "unsupported package-test host: $host" >&2
