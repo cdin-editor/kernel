@@ -37,22 +37,6 @@ The core public API is defined by the single public header: [`include/cdin/kerne
 - Regex search is not implemented and returns `CDIN_UNSUPPORTED`. `CDIN_RELOAD_KEEP_HISTORY` is also not supported.
 - Default resource limits are declared in `include/cdin/kernel.h` and explained in [limits and status](docs/limits-and-status.md).
 
-## Repository layout
-
-```text
-include/cdin/kernel.h  Public C ABI; the only public kernel header
-src/                   Implementation, divided by subsystem
-examples/c/            Direct C API quickstart
-examples/ffi/          Optional convenience bridge for foreign-function interfaces
-examples/python/       Python ctypes example
-examples/go/           Go cgo example
-examples/node/         JavaScript and TypeScript examples using Koffi
-conformance/            Conformance vectors and the C runner
- tests/                 Regression and fuzz-test entry points
-bench/                  Benchmark programs
-docs/                   User, ABI, architecture, and developer documentation
-```
-
 ## License
 
 GPL-3.0-or-later. See [LICENSE](LICENSE).
