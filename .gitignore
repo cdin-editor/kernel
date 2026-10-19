@@ -1,0 +1,36 @@
+# Build artifacts
+/build/
+*.o
+*.a
+*.exe
+*.dll
+*.lib
+*.pdb
+*.ilk
+
+# Compiler output
+*.d
+*.obj
+
+# Test output
+test_output/
+*.log
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+Thumbs.db
+Desktop.ini
+
+# Temporary
+*.tmp
+*.bak
+baseline
+# Node.js / TypeScript examples
+node_modules/
+dist/

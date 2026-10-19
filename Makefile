@@ -1,0 +1,218 @@
+# cdin-kernel build. Portable: CC/AR default to the platform toolchain.
+# Override on the command line, e.g. `make CC=/path/to/gcc.exe AR=/path/to/ar.exe`.
+
+CC      ?= cc
+AR      ?= ar
+RANLIB  ?= ranlib
+
+WARN    = -Wall -Wextra -Wshadow -Wconversion -Wstrict-prototypes -Wformat=2 -Wpedantic -Werror
+CFLAGS  ?= -O2
+CFLAGS  += -std=c11 -Iinclude -Isrc $(WARN) -MMD -MP
+LDFLAGS ?=
+LDLIBS  ?=
+ifneq ($(OS),Windows_NT)
+  LDLIBS += -pthread
+endif
+
+BUILD  = build
+OBJ    = $(BUILD)/obj
+LIB    = $(BUILD)/libcdin_kernel.a
+RUNNER = $(BUILD)/conformance-runner
+TESTS  = $(BUILD)/test_p1 $(BUILD)/test_p3_conc
+BENCH  = $(BUILD)/bench
+FUZZ   = $(BUILD)/fuzz_ops
+SH_OBJ = $(BUILD)/shared_obj
+FFI_OBJ = $(BUILD)/ffi_obj
+
+ifeq ($(OS),Windows_NT)
+  SHARED = $(BUILD)/cdin_kernel.dll
+  FFI_SHARED = $(BUILD)/cdin_ffi.dll
+  SHARED_LINK_FLAGS = -shared
+  SHARED_EXTRA_LIBS = -Wl,--out-implib,$(BUILD)/libcdin_kernel.dll.a
+  FFI_EXTRA_LIBS = -Wl,--out-implib,$(BUILD)/libcdin_ffi.dll.a
+  SHARED_CFLAGS = -DCDIN_KERNEL_BUILD_DLL
+else ifeq ($(shell uname -s),Darwin)
+  SHARED = $(BUILD)/libcdin_kernel.dylib
+  FFI_SHARED = $(BUILD)/libcdin_ffi.dylib
+  SHARED_LINK_FLAGS = -dynamiclib
+  SHARED_EXTRA_LIBS =
+  FFI_EXTRA_LIBS =
+  SHARED_CFLAGS = -fPIC -fvisibility=hidden
+else
+  SHARED = $(BUILD)/libcdin_kernel.so
+  FFI_SHARED = $(BUILD)/libcdin_ffi.so
+  SHARED_LINK_FLAGS = -shared
+  SHARED_EXTRA_LIBS =
+  FFI_EXTRA_LIBS =
+  SHARED_CFLAGS = -fPIC -fvisibility=hidden
+endif
+
+# Recursive: src/*.c plus every module directory under src/.
+SRC = $(sort $(wildcard src/*.c) $(wildcard src/*/*.c))
+# src/new_kernel_code is the integration reference, kept for comparison only.
+SRC := $(filter-out src/new_kernel_code/%,$(SRC))
+RUN_SRC = $(sort $(wildcard conformance/runner/*.c))
+# Objects are flattened into build/obj with '/' replaced by '_', so no
+# per-directory mkdir is needed.
+K_REL   = $(patsubst src/%.c,%,$(SRC))
+K_FLAT  = $(subst /,_,$(K_REL))
+K_OBJ   = $(addprefix $(OBJ)/,$(addsuffix .o,$(K_FLAT)))
+R_OBJ   = $(patsubst conformance/runner/%.c,$(OBJ)/runner_%.o,$(RUN_SRC))
+VECS    = $(sort $(wildcard conformance/vec/*/*.vec))
+
+ifeq ($(OS),Windows_NT)
+  # cmd reads a forward slash as a switch, so paths go through subst.
+  DEL = cmd /c del /q $(subst /,\\,$(1))
+  MKDIR = powershell -NoProfile -Command "New-Item -ItemType Directory -Force -Path build/obj,build/shared_obj,build/ffi_obj | Out-Null"
+else
+  DEL = rm -f $(1)
+  MKDIR = mkdir -p build/obj build/shared_obj build/ffi_obj
+endif
+
+$(shell $(MKDIR))
+
+.PHONY: all shared ffi-shared quickstart check check-vectors check-tests vectors asan tsan fuzz-build bench clean trace tests
+
+all: $(LIB)
+
+# Shared builds use separately compiled position-independent objects. `ffi-shared`
+# adds the optional examples/ffi bridge, not part of the stable public ABI.
+shared: $(SHARED)
+ffi-shared: $(FFI_SHARED)
+quickstart: $(BUILD)/quickstart
+	$(BUILD)/quickstart
+
+$(SHARED): $(addprefix $(SH_OBJ)/,$(addsuffix .o,$(K_FLAT)))
+	$(CC) $(SHARED_LINK_FLAGS) $(LDFLAGS) $(SHARED_EXTRA_LIBS) -o $@ $^ $(LDLIBS)
+
+$(FFI_SHARED): $(addprefix $(SH_OBJ)/,$(addsuffix .o,$(K_FLAT))) $(FFI_OBJ)/cdin_ffi.o
+	$(CC) $(SHARED_LINK_FLAGS) $(LDFLAGS) $(FFI_EXTRA_LIBS) -o $@ $^ $(LDLIBS)
+
+$(BUILD)/quickstart: examples/c/quickstart.c $(LIB) include/cdin/kernel.h
+	$(CC) -std=c11 -Wall -Wextra -Wpedantic -Werror -Iinclude $< $(LIB) -o $@
+
+
+$(LIB): $(K_OBJ)
+	$(AR) rcs $@ $^
+	$(RANLIB) $@
+
+# A pattern rule cannot flatten '/' in the target, so one explicit rule per
+# source file is generated instead. -MF redirects the dependency file to the
+# flattened name so no per-directory mkdir is needed.
+define K_RULE
+$(OBJ)/$(subst /,_,$(subst .c,.o,$(1))).o: src/$(1).c
+	$$(CC) $$(CFLAGS) -MF $$(@:.o=.d) -c $$< -o $$@
+endef
+$(foreach f,$(SRC),$(eval $(call K_RULE,$(patsubst src/%.c,%,$(f)))))
+
+define SH_K_RULE
+$(SH_OBJ)/$(subst /,_,$(subst .c,.o,$(1))).o: src/$(1).c
+	$$(CC) $$(CFLAGS) $$(SHARED_CFLAGS) -MF $$(@:.o=.d) -c $$< -o $$@
+endef
+$(foreach f,$(SRC),$(eval $(call SH_K_RULE,$(patsubst src/%.c,%,$(f)))))
+
+$(FFI_OBJ)/cdin_ffi.o: examples/ffi/cdin_ffi.c examples/ffi/cdin_ffi.h include/cdin/kernel.h
+	$(CC) $(CFLAGS) $(SHARED_CFLAGS) -Iexamples/ffi -MF $(@:.o=.d) -c $< -o $@
+
+$(OBJ)/runner_%.o: conformance/runner/%.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(RUNNER): $(R_OBJ) $(LIB)
+	$(CC) $(CFLAGS) $(LDFLAGS) $(R_OBJ) $(LIB) -o $@
+
+# Conformance gate: every vector and every C regression test must pass.
+# `make check` stops at the first failing gate; run the two halves separately to
+# get both results in one go (check-vectors, check-tests).
+check: check-vectors check-tests
+
+# One process per vector file. The kernel keeps some state at process scope
+# (shutdown flag, subscriber table), so a defect in one vector would otherwise
+# contaminate every file that runs after it and hide the real result.
+ifeq ($(OS),Windows_NT)
+  # cmd treats the forward slashes in the binary path as switches.
+  RUNNER_EXE = $(subst /,\\,$(RUNNER))
+  VEC_LOOP = cmd /c "for %f in ($(VECS)) do @$(RUNNER_EXE) %f || exit /b 1"
+  VEC_LOOP_ALL = cmd /c "for %f in ($(VECS)) do @$(RUNNER_EXE) %f"
+else
+  RUNNER_EXE = $(RUNNER)
+  VEC_LOOP = for f in $(VECS); do $(RUNNER) $$f || exit 1; done
+  VEC_LOOP_ALL = for f in $(VECS); do $(RUNNER) $$f; done; exit 0
+endif
+
+check-vectors: $(RUNNER)
+	@echo "vectors: $(words $(VECS)), one process per file"
+	@$(VEC_LOOP)
+
+# Every vector, one process per file, failures ignored: this is the reporting
+# target. The gate is check-vectors, which stops at the first failing file.
+vectors: $(RUNNER)
+	-@$(VEC_LOOP_ALL)
+
+check-tests: $(TESTS)
+	$(TESTS)
+
+$(TESTS): tests/test_p1.c tests/test_p3_conc.c $(OBJ)/runner_alloc_strict.o $(LIB)
+	$(CC) $(CFLAGS) $(LDFLAGS) -Isrc -Iconformance/runner tests/test_p1.c \
+	    $(OBJ)/runner_alloc_strict.o $(LIB) -o $(BUILD)/test_p1
+	$(CC) $(CFLAGS) $(LDFLAGS) -Isrc -Iconformance/runner tests/test_p3_conc.c \
+	    $(OBJ)/runner_alloc_strict.o $(LIB) $(LDLIBS) -o $(BUILD)/test_p3_conc
+
+tests: check-tests
+
+# Sanitizer targets need a POSIX shell and a toolchain with the sanitizer
+# runtime (CI on Ubuntu, or WSL). They run EVERY vector (the vector gate is
+# check-vectors) and then the C tests, which decide the sanitizer gate.
+asan: CFLAGS  += -fsanitize=address,undefined -g
+asan: LDFLAGS += -fsanitize=address,undefined
+asan:
+	-@$(MAKE) clean
+	@$(MAKE) vectors
+	@$(MAKE) check-tests; \
+	  if [ $$? -ne 0 ]; then echo "asan gate RED: the C tests failed"; exit 1; fi; \
+	  echo "asan gate GREEN: every vector and every C test ran with no report"
+
+tsan: CFLAGS  += -fsanitize=thread -g
+tsan: LDFLAGS += -fsanitize=thread
+tsan:
+	-@$(MAKE) clean
+	@$(MAKE) vectors
+	@$(MAKE) check-tests; \
+	  if [ $$? -ne 0 ]; then echo "tsan gate RED: the C tests failed"; exit 1; fi; \
+	  echo "tsan gate GREEN: every vector and every C test ran with no report"
+
+# libFuzzer targets (clang only).
+fuzz-build: CFLAGS  += -fsanitize=fuzzer,address,undefined -g
+fuzz-build: LDFLAGS += -fsanitize=fuzzer,address,undefined
+fuzz-build: build/fuzz_abi build/fuzz_classifiers build/fuzz_vector_parser $(FUZZ)
+
+ifneq ($(STANDALONE),)
+FUZZ_CFLAGS := -DSTANDALONE -Wno-unused-parameter
+endif
+build/fuzz_ops: fuzz/fuzz_ops.c support/strict_alloc.c $(LIB)
+	$(CC) $(CFLAGS) $(FUZZ_CFLAGS) $(LDFLAGS) fuzz/fuzz_ops.c support/strict_alloc.c \
+	    -Iinclude -I. $(LIB) -o $@
+
+build/fuzz_abi: tests/fuzz_abi.c $(LIB)
+	$(CC) $(CFLAGS) $(LDFLAGS) tests/fuzz_abi.c -Iinclude $(LIB) -o $@
+
+build/fuzz_classifiers: tests/fuzz_classifiers.c $(LIB)
+	$(CC) $(CFLAGS) $(LDFLAGS) tests/fuzz_classifiers.c -Iinclude $(LIB) -o $@
+
+build/fuzz_vector_parser: tests/fuzz_vector_parser.c $(R_OBJ)
+	$(CC) $(CFLAGS) $(LDFLAGS) tests/fuzz_vector_parser.c -Iinclude -Iconformance/runner $(R_OBJ) -o $@
+
+support/strict_alloc.o: support/strict_alloc.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BENCH): bench/bench.c $(LIB) support/strict_alloc.o
+	$(CC) $(CFLAGS) $(LDFLAGS) bench/bench.c support/strict_alloc.o -I. \
+	    $(LIB) -o $@
+
+# Regenerate the requirement -> vector -> result table from the vectors.
+trace: $(RUNNER)
+	$(RUNNER) --trace $(VECS)
+
+clean:
+	-$(call DEL,$(OBJ)/*.o $(OBJ)/*.d $(SH_OBJ)/*.o $(SH_OBJ)/*.d $(FFI_OBJ)/*.o $(FFI_OBJ)/*.d $(LIB) $(SHARED) $(FFI_SHARED) $(BUILD)/libcdin_kernel.dll.a $(BUILD)/libcdin_ffi.dll.a $(BUILD)/quickstart $(RUNNER) $(TESTS) $(BENCH) $(FUZZ) build/fuzz_abi build/fuzz_classifiers build/fuzz_vector_parser support/strict_alloc.o)
+
+-include $(wildcard $(OBJ)/*.d $(SH_OBJ)/*.d $(FFI_OBJ)/*.d)

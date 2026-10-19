@@ -1,0 +1,28 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# Explicitly declare text files
+*.c text
+*.h text
+*.md text
+*.txt text
+*.yml text
+*.yaml text
+*.json text
+*.vec text
+*.bat text
+*.sh text
+
+# Explicitly declare binary files
+*.a binary
+*.o binary
+*.exe binary
+*.dll binary
+*.lib binary
+*.pdb binary
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.rar binary
+*.zip binary
