@@ -1,0 +1,57 @@
+vector unicode.fold.simple_case covers SEARCH-002 SEARCH-005 SEARCH-020 SEARCH-021
+  create_doc bytes="Hello World"
+  expect CDIN_OK handle=k1
+  search handle=k1 pattern="hello" mode=literal case_sensitive=0 direction=forward from=0
+  expect CDIN_OK count=1 matches="0:5" version=0
+  search handle=k1 pattern="WORLD" mode=literal case_sensitive=0 direction=forward from=0
+  expect CDIN_OK count=1 matches="6:11" version=0
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector unicode.fold.persian_distinct covers SEARCH-021 SEARCH-022
+  create_doc bytes="\xD9\x8A\xD8\xA8\xD8\xA7\xD9\x86\xD9\x8A"
+  expect CDIN_OK handle=k1
+  search handle=k1 pattern="\xDB\x8C" mode=literal direction=forward from=0
+  expect CDIN_OK count=0 matches="" version=0
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector unicode.fold.no_normalization covers SEARCH-022 SEARCH-023
+  create_doc bytes="e\xCC\x81"
+  expect CDIN_OK handle=k1
+  search handle=k1 pattern="e\xCC\x81" mode=literal direction=forward from=0
+  expect CDIN_OK count=1 matches="0:3" version=0
+  search handle=k1 pattern="\xC3\xA9" mode=literal direction=forward from=0
+  expect CDIN_OK count=0 matches="" version=0
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector unicode.grapheme_boundary covers POS-030 POS-033
+  create_doc bytes="hello"
+  expect CDIN_OK handle=k1
+  grapheme_next handle=k1 offset=0
+  expect CDIN_OK next=1
+  grapheme_next handle=k1 offset=4
+  expect CDIN_OK next=5
+  grapheme_prev handle=k1 offset=5
+  expect CDIN_OK prev=4
+  grapheme_prev handle=k1 offset=1
+  expect CDIN_OK prev=0
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector unicode.grapheme_raw_byte covers POS-033
+  create_doc bytes="a\xFFb"
+  expect CDIN_OK handle=k1
+  grapheme_next handle=k1 offset=0
+  expect CDIN_OK next=1
+  grapheme_next handle=k1 offset=1
+  expect CDIN_OK next=2
+  grapheme_next handle=k1 offset=2
+  expect CDIN_OK next=3
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector unicode.version_query covers POS-032
+  unicode_version
+  expect CDIN_OK major=15 minor=1 patch=0

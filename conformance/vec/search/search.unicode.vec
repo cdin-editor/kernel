@@ -1,0 +1,41 @@
+vector search.unicode.folding covers SEARCH-020 SEARCH-021
+  create_doc bytes="Café"
+  expect CDIN_OK handle=k1
+  search handle=k1 pattern="café" mode=literal direction=forward from=0 case_sensitive=0 limit=0
+  expect CDIN_OK count=1
+  search handle=k1 pattern="CAFÉ" mode=literal direction=forward from=0 case_sensitive=0 limit=0
+  expect CDIN_OK count=1
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector search.unicode.latin1 covers SEARCH-020
+  create_doc bytes="\xC3\x80\xC3\x96\xC3\x98\xC3\x9E"
+  expect CDIN_OK handle=k1
+  search handle=k1 pattern="\xC3\xA0\xC3\xB6\xC3\xB8\xC3\xBE" mode=literal direction=forward from=0 case_sensitive=0 limit=0
+  expect CDIN_OK count=1
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector search.step_limit covers CONC-007
+  create_doc bytes="aaaaaaaaaa"
+  expect CDIN_OK handle=k1
+  search handle=k1 pattern="aa" mode=literal direction=forward from=0 case_sensitive=1 limit=0 cancel_step=3
+  expect CDIN_LIMIT_EXCEEDED
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector search.truncated_array covers SEARCH-030
+  create_doc bytes="aaaaaaaaaa"
+  expect CDIN_OK handle=k1
+  search handle=k1 pattern="aa" mode=literal direction=forward from=0 case_sensitive=1 limit=3
+  expect CDIN_OK count=3 truncated=1
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector search.cancel covers CONC-007
+  create_doc bytes="aaaaaaaaaa"
+  expect CDIN_OK handle=k1
+  search handle=k1 pattern="aa" mode=literal direction=forward from=0 case_sensitive=1 limit=0 cancel=1
+  expect CDIN_CANCELLED
+  close_doc handle=k1
+  expect CDIN_OK

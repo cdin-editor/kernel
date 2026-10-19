@@ -1,0 +1,83 @@
+vector search.literal.forward covers SEARCH-001 SEARCH-003 SEARCH-007 SEARCH-010 SEARCH-011
+  create_doc bytes="hello world hello"
+  expect CDIN_OK handle=k1
+  search handle=k1 pattern="hello" mode=literal direction=forward from=0
+  expect CDIN_OK count=2 matches="0:5 12:17" version=0
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector search.literal.backward covers SEARCH-001 SEARCH-003
+  create_doc bytes="hello world hello"
+  expect CDIN_OK handle=k1
+  search handle=k1 pattern="hello" mode=literal direction=backward from=17
+  expect CDIN_OK count=2 matches="12:17 0:5" version=0
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector search.literal.case_sensitive covers SEARCH-002 SEARCH-021 SEARCH-022
+  create_doc bytes="Hello hello HELLO"
+  expect CDIN_OK handle=k1
+  search handle=k1 pattern="hello" mode=literal case_sensitive=1 direction=forward from=0
+  expect CDIN_OK count=1 matches="6:11" version=0
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector search.literal.case_insensitive_ascii covers SEARCH-002
+  create_doc bytes="Hello hello HELLO"
+  expect CDIN_OK handle=k1
+  search handle=k1 pattern="hello" mode=literal case_sensitive=0 direction=forward from=0
+  expect CDIN_OK count=3 matches="0:5 6:11 12:17" version=0
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector search.literal.persian_distinct covers SEARCH-021 SEARCH-022
+  create_doc bytes="\xD8\xA7\xD8\xB2\xDB\x8C\xD8\xA7\xD8\xB2\xD9\x8A"
+  expect CDIN_OK handle=k1
+  search handle=k1 pattern="\xDB\x8C" mode=literal direction=forward from=0
+  expect CDIN_OK count=1 matches="4:6" version=0
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector search.literal.multiline covers SEARCH-006 SEARCH-030 SEARCH-032
+  create_doc bytes="line1\x0Aline2\x0Aline3"
+  expect CDIN_OK handle=k1
+  search handle=k1 pattern="line2" mode=literal direction=forward from=0
+  expect CDIN_OK count=1 matches="6:11" version=0
+  search handle=k1 pattern="\x0Aline2" mode=literal direction=forward from=0
+  expect CDIN_OK count=1 matches="5:11" version=0
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector search.literal.invalid_utf8 covers SEARCH-008 SEARCH-040 SEARCH-042
+  create_doc bytes="hello\xFFhello"
+  expect CDIN_OK handle=k1
+  search handle=k1 pattern="hello" mode=literal direction=forward from=0
+  expect CDIN_OK count=2 matches="0:5 6:11" version=0
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector search.literal.regex_unsupported covers SEARCH-004 SEARCH-014
+  create_doc bytes="hello"
+  expect CDIN_OK handle=k1
+  search handle=k1 pattern="h.*o" mode=regex direction=forward from=0
+  expect CDIN_UNSUPPORTED
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector search.literal.find_all_limit covers SEARCH-011 SEARCH-013
+  create_doc bytes="aaa"
+  expect CDIN_OK handle=k1
+  search handle=k1 pattern="a" mode=literal direction=forward from=0 limit=2
+  expect CDIN_OK count=2 matches="0:1 1:2" version=0
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector search.literal.snapshot_version covers SEARCH-007 SEARCH-010
+  create_doc bytes="hello"
+  expect CDIN_OK handle=k1
+  replace handle=k1 start=5 end=5 bytes=" world" expected_version=0
+  expect CDIN_OK new_version=1
+  search handle=k1 pattern="hello" mode=literal direction=forward from=0
+  expect CDIN_OK count=1 matches="0:5" version=1
+  close_doc handle=k1
+  expect CDIN_OK

@@ -1,0 +1,179 @@
+vector text.regions.e2_80_41 covers TEXT-010 TEXT-011 TEXT-012 POS-020 POS-021
+  create_doc bytes="\xE2\x80\x41"
+  expect CDIN_OK handle=k1
+  check_position handle=k1 offset=0
+  expect CDIN_OK valid=1
+  check_position handle=k1 offset=1
+  expect CDIN_OK valid=1
+  check_position handle=k1 offset=2
+  expect CDIN_OK valid=1
+  check_position handle=k1 offset=3
+  expect CDIN_OK valid=1
+  byte_to_codepoint handle=k1 offset=1
+  expect CDIN_OK codepoint=1
+  byte_to_codepoint handle=k1 offset=2
+  expect CDIN_OK codepoint=2
+  read handle=k1 start=0 end=3
+  expect CDIN_OK data="\xE2\x80\x41"
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector text.regions.lone_continuation covers TEXT-004 TEXT-012 POS-021
+  create_doc bytes="\x80"
+  expect CDIN_OK handle=k1
+  check_position handle=k1 offset=0
+  expect CDIN_OK valid=1
+  check_position handle=k1 offset=1
+  expect CDIN_OK valid=1
+  byte_to_codepoint handle=k1 offset=1
+  expect CDIN_OK codepoint=1
+  serialize handle=k1
+  expect CDIN_OK data="\x80"
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector text.regions.overlong_c0_80 covers TEXT-012 POS-021
+  create_doc bytes="\xC0\x80"
+  expect CDIN_OK handle=k1
+  check_position handle=k1 offset=1
+  expect CDIN_OK valid=1
+  check_position handle=k1 offset=2
+  expect CDIN_OK valid=1
+  read handle=k1 start=0 end=2
+  expect CDIN_OK data="\xC0\x80"
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector text.regions.surrogate_ed_a0_80 covers TEXT-012 POS-021
+  create_doc bytes="\xED\xA0\x80"
+  expect CDIN_OK handle=k1
+  check_position handle=k1 offset=1
+  expect CDIN_OK valid=1
+  check_position handle=k1 offset=3
+  expect CDIN_OK valid=1
+  byte_to_codepoint handle=k1 offset=3
+  expect CDIN_OK codepoint=3
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector text.regions.above_max_f4_90 covers TEXT-012 POS-021
+  create_doc bytes="\xF4\x90\x80\x80"
+  expect CDIN_OK handle=k1
+  check_position handle=k1 offset=1
+  expect CDIN_OK valid=1
+  check_position handle=k1 offset=4
+  expect CDIN_OK valid=1
+  byte_to_codepoint handle=k1 offset=4
+  expect CDIN_OK codepoint=4
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector text.regions.truncated_at_eof covers TEXT-012 POS-021
+  create_doc bytes="a\xC3"
+  expect CDIN_OK handle=k1
+  check_position handle=k1 offset=2
+  expect CDIN_OK valid=1
+  byte_to_codepoint handle=k1 offset=2
+  expect CDIN_OK codepoint=2
+  serialize handle=k1
+  expect CDIN_OK data="a\xC3"
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector text.regions.valid_multibyte is_not_raw covers POS-020 TEXT-012
+  create_doc bytes="\xC3\xA9"
+  expect CDIN_OK handle=k1
+  check_position handle=k1 offset=0
+  expect CDIN_OK valid=1
+  check_position handle=k1 offset=2
+  expect CDIN_OK valid=1
+  check_position handle=k1 offset=1
+  expect CDIN_INVALID_POSITION
+  byte_to_codepoint handle=k1 offset=1
+  expect CDIN_INVALID_POSITION
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector text.regions.classification_follows_edit covers TEXT-010 TEXT-011 TEXT-013
+  create_doc bytes="\xE2\x80"
+  expect CDIN_OK handle=k1
+  check_position handle=k1 offset=1
+  expect CDIN_OK valid=1
+  replace handle=k1 start=2 end=2 bytes="\x80" expected_version=0
+  expect CDIN_OK new_version=1
+  read handle=k1 start=0 end=3
+  expect CDIN_OK data="\xE2\x80\x80"
+  check_position handle=k1 offset=1
+  expect CDIN_INVALID_POSITION
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector text.bytes.empty covers TEXT-001 TEXT-040 TEXT-042
+  create_doc
+  expect CDIN_OK handle=k1
+  read handle=k1 start=0 end=0
+  expect CDIN_OK data=""
+  serialize handle=k1
+  expect CDIN_OK data=""
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector text.bytes.ascii covers TEXT-001 TEXT-004 TEXT-042
+  create_doc bytes="hello world"
+  expect CDIN_OK handle=k1
+  read handle=k1 start=0 end=11
+  expect CDIN_OK data="hello world"
+  serialize handle=k1
+  expect CDIN_OK data="hello world"
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector text.bytes.invalid_utf8 covers TEXT-001 TEXT-004 TEXT-013 TEXT-042
+  create_doc bytes="a\xFFb"
+  expect CDIN_OK handle=k1
+  read handle=k1 start=0 end=3
+  expect CDIN_OK data="a\xFFb"
+  serialize handle=k1
+  expect CDIN_OK data="a\xFFb"
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector text.bytes.bom_preserved covers TEXT-030 TEXT-042
+  create_doc bytes="\xEF\xBB\xBFtext"
+  expect CDIN_OK handle=k1
+  read handle=k1 start=0 end=7
+  expect CDIN_OK data="\xEF\xBB\xBFtext"
+  serialize handle=k1
+  expect CDIN_OK data="\xEF\xBB\xBFtext"
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector text.bytes.nul_preserved covers TEXT-031 TEXT-042
+  create_doc bytes="a\x00b"
+  expect CDIN_OK handle=k1
+  read handle=k1 start=0 end=3
+  expect CDIN_OK data="a\x00b"
+  serialize handle=k1
+  expect CDIN_OK data="a\x00b"
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector text.bytes.no_normalization covers TEXT-032 TEXT-042
+  create_doc bytes="e\xCC\x81"
+  expect CDIN_OK handle=k1
+  read handle=k1 start=0 end=3
+  expect CDIN_OK data="e\xCC\x81"
+  serialize handle=k1
+  expect CDIN_OK data="e\xCC\x81"
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector text.bytes.lf_crlf_cr covers TEXT-002 TEXT-003
+  create_doc bytes="a\x0Ab\x0Dc\x0D\x0Ad"
+  expect CDIN_OK handle=k1
+  read handle=k1 start=0 end=8
+  expect CDIN_OK data="a\x0Ab\x0Dc\x0D\x0Ad"
+  serialize handle=k1
+  expect CDIN_OK data="a\x0Ab\x0Dc\x0D\x0Ad"
+  close_doc handle=k1
+  expect CDIN_OK
