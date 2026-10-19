@@ -1,0 +1,71 @@
+vector undo.basic.undo_redo covers UNDO-001 UNDO-002 UNDO-003 UNDO-004
+  create_doc bytes="abc"
+  expect CDIN_OK handle=k1
+  replace handle=k1 start=1 end=2 bytes="X" expected_version=0
+  expect CDIN_OK new_version=1 start=1 removed=1 inserted=1 new_length=3
+  undo handle=k1 expected_version=1
+  expect CDIN_OK new_version=2
+  read handle=k1 start=0 end=3
+  expect CDIN_OK data="abc"
+  redo handle=k1 expected_version=2
+  expect CDIN_OK new_version=3
+  read handle=k1 start=0 end=3
+  expect CDIN_OK data="aXc"
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector undo.basic.empty_undo covers UNDO-004
+  create_doc bytes="abc"
+  expect CDIN_OK handle=k1
+  undo handle=k1 expected_version=0
+  expect CDIN_INVALID_STATE
+  redo handle=k1 expected_version=0
+  expect CDIN_INVALID_STATE
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector undo.basic.new_edit_drops_redo covers UNDO-003
+  create_doc bytes="abc"
+  expect CDIN_OK handle=k1
+  replace handle=k1 start=1 end=2 bytes="X" expected_version=0
+  expect CDIN_OK new_version=1
+  undo handle=k1 expected_version=1
+  expect CDIN_OK new_version=2
+  replace handle=k1 start=0 end=1 bytes="Z" expected_version=2
+  expect CDIN_OK new_version=3
+  redo handle=k1 expected_version=3
+  expect CDIN_INVALID_STATE
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector undo.coalesce covers UNDO-010 UNDO-012 UNDO-013
+  create_doc bytes="hello"
+  expect CDIN_OK handle=k1
+  replace handle=k1 start=5 end=5 bytes="a" expected_version=0 coalesce_key=1
+  expect CDIN_OK new_version=1
+  replace handle=k1 start=6 end=6 bytes="b" expected_version=1 coalesce_key=1
+  expect CDIN_OK new_version=2
+  undo handle=k1 expected_version=2
+  expect CDIN_OK new_version=3
+  read handle=k1 start=0 end=5
+  expect CDIN_OK data="hello"
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector undo.clean_marker covers UNDO-040 DOC-040
+  create_doc bytes="abc"
+  expect CDIN_OK handle=k1
+  mark_clean handle=k1
+  expect CDIN_OK
+  is_clean handle=k1
+  expect CDIN_OK clean=1
+  replace handle=k1 start=0 end=1 bytes="X" expected_version=0
+  expect CDIN_OK new_version=1
+  is_clean handle=k1
+  expect CDIN_OK clean=0
+  undo handle=k1 expected_version=1
+  expect CDIN_OK new_version=2
+  is_clean handle=k1
+  expect CDIN_OK clean=1
+  close_doc handle=k1
+  expect CDIN_OK
