@@ -41,7 +41,7 @@ jobs:
       - name: Build and run vectors (MSYS2 UCRT64)
         if: matrix.cc == 'msys2-ucrt64'
         shell: msys2 {0}
-        run: $env:MSYSTEM -ucrt64 -defterm -here -no-start -clang off -nowarning -c "make CC=gcc check"
+        run: make CC=gcc check
 
   sanitizers:
     name: asan (${{ matrix.os }})
