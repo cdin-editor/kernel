@@ -1,0 +1,143 @@
+name: Release candidate
+
+on:
+  push:
+    tags:
+      - 'v*-alpha.*'
+      - 'v*-beta.*'
+      - 'v*-rc.*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test-package:
+    name: ${{ matrix.id }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: linux-x64
+            os: ubuntu-latest
+            cc: gcc
+          - id: macos
+            os: macos-latest
+            cc: clang
+          - id: windows-ucrt64
+            os: windows-latest
+            cc: gcc
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config zip
+
+      - name: Install Windows UCRT64 build dependencies
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-pkgconf
+            make
+            zip
+
+      - name: Determine and validate package version
+        id: version
+        shell: bash
+        run: |
+          major="$(sed -n 's/^#define CDIN_KERNEL_ABI_MAJOR \([0-9][0-9]*\)u/\1/p' include/cdin/kernel.h)"
+          minor="$(sed -n 's/^#define CDIN_KERNEL_ABI_MINOR \([0-9][0-9]*\)u/\1/p' include/cdin/kernel.h)"
+          patch="$(sed -n 's/^#define CDIN_KERNEL_ABI_PATCH \([0-9][0-9]*\)u/\1/p' include/cdin/kernel.h)"
+          abi_version="${major}.${minor}.${patch}"
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            package_version="${GITHUB_REF_NAME#v}"
+            tag_base="${package_version%%-*}"
+            if [[ "$tag_base" != "$abi_version" ]]; then
+              echo "tag $GITHUB_REF_NAME does not match header ABI version $abi_version" >&2
+              exit 1
+            fi
+          else
+            package_version="${abi_version}-dev.${GITHUB_SHA:0:7}"
+          fi
+          echo "package_version=$package_version" >> "$GITHUB_OUTPUT"
+          echo "ABI version: $abi_version; package version: $package_version"
+
+      - name: Build all library forms, run tests, and check installed consumers (Linux/macOS)
+        if: runner.os != 'Windows'
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          make CC="$CC" clean
+          make CC="$CC" all shared ffi-shared quickstart
+          make CC="$CC" check
+          CC="$CC" scripts/check-public-header.sh
+          stage="$PWD/build/stage"
+          make CC="$CC" DESTDIR="$stage" PREFIX=/cdin install
+          CC="$CC" scripts/verify-installed.sh "$stage/cdin"
+          PACKAGE_VERSION='${{ steps.version.outputs.package_version }}' STAGED_PREFIX="$stage/cdin" scripts/package-release.sh
+
+      - name: Build all library forms, run tests, and check installed consumers (Windows UCRT64)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        env:
+          CC: gcc
+          PACKAGE_VERSION: ${{ steps.version.outputs.package_version }}
+        run: |
+          make OS= SHELL=/usr/bin/bash CC=gcc clean
+          make OS= SHELL=/usr/bin/bash CC=gcc all shared ffi-shared quickstart
+          make OS= SHELL=/usr/bin/bash CC=gcc check
+          CC=gcc CXX=g++ scripts/check-public-header.sh
+          stage="$PWD/build/stage"
+          make OS= SHELL=/usr/bin/bash CC=gcc DESTDIR="$stage" PREFIX=/cdin install
+          CC=gcc scripts/verify-installed.sh "$stage/cdin"
+          PACKAGE_VERSION="$PACKAGE_VERSION" STAGED_PREFIX="$stage/cdin" scripts/package-release.sh
+
+      - name: Upload platform package and checksum
+        uses: actions/upload-artifact@v7
+        with:
+          name: cdin-kernel-assets-${{ matrix.id }}
+          path: |
+            dist/*.tar.gz
+            dist/*.tar.gz.sha256
+            dist/*.zip
+            dist/*.zip.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+  publish-prerelease:
+    name: Publish GitHub prerelease
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs: build-test-package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: cdin-kernel-assets-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Verify release assets are present
+        run: |
+          set -eu
+          find release-assets -maxdepth 1 -type f -print
+          test "$(find release-assets -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.zip' \) | wc -l)" -eq 3
+          test "$(find release-assets -maxdepth 1 -type f -name '*.sha256' | wc -l)" -eq 3
+
+      - name: Publish prerelease and assets
+        uses: softprops/action-gh-release@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          prerelease: true
+          make_latest: false
+          generate_release_notes: true
+          files: release-assets/*

@@ -11,6 +11,7 @@ make              # build the static library: build/libcdin_kernel.a
 make quickstart    # compile and run the minimal C example
 make check         # conformance vectors + C regression tests
 make shared        # build a shared library for FFI consumers
+make install       # install header + static/shared library + pkg-config file
 make ffi-shared    # build the optional, small-ABI FFI example bridge
 ```
 
@@ -21,7 +22,7 @@ The core public API is defined by the single public header: [`include/cdin/kerne
 - [Documentation home](docs/index.md)
 - **[User guide](docs/user-guide.md)** — recommended first read; lifecycle, reading, editing, versions, undo/redo, transactions, snapshots, search, notifications, and text positions.
 - [Getting started: build and link](docs/getting-started.md)
-- [Installation and packaging](docs/installation.md)
+- [Installation and packaging](docs/installation.md) — install targets, staged installs, `pkg-config`, and release archives.
 - [C ABI reference and compatibility rules](docs/abi.md)
 - [Using from Python, Go, JavaScript, and TypeScript](docs/language-bindings.md)
 - [Limits, statuses, and current support](docs/limits-and-status.md)

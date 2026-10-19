@@ -1,86 +1,93 @@
 # Installation and packaging
 
-`cdin-kernel` currently ships as source code. The repository has build targets for static/shared libraries, but **does not provide `make install`, a package-manager formula, or a prebuilt binary release**. This page explains how to stage the artifacts after building them. Packaging maintainers should add platform-appropriate versioning, install names, and upgrade rules before distributing a shared library to system-wide locations.
+`cdin-kernel` provides a C11 source build, a static library, a shared library, a public header, and a `pkg-config` file. The ABI is still marked **draft 0.2.0**; treat pre-release binaries as version-matched and rebuild bindings when the ABI changes.
 
-## 1. Build the artifact you need
+## Build and test
 
-Run from the repository root:
-
-```sh
-make                 # build/libcdin_kernel.a
-make shared          # build/libcdin_kernel.so / .dylib / .dll
-make ffi-shared      # optional example bridge used by the non-C examples
-make check           # verify behavior before packaging
-```
-
-The public core requires only `include/cdin/kernel.h` plus the corresponding library. The `examples/ffi/` bridge is optional and is not a stable part of the kernel ABI.
-
-## 2. Stage a Unix-like installation
-
-For a local app or development prefix, stage only the files you use. Example for a POSIX environment with write access to `/usr/local`:
+From the repository root:
 
 ```sh
-sudo install -D -m 0644 include/cdin/kernel.h /usr/local/include/cdin/kernel.h
-sudo install -D -m 0644 build/libcdin_kernel.a /usr/local/lib/libcdin_kernel.a
+make clean
+make all shared quickstart
+make check
 ```
 
-To stage the Linux shared library instead of (or as well as) the static archive:
+`make all` builds `build/libcdin_kernel.a`. `make shared` builds the platform library (`.so`, `.dylib`, or `.dll`) and import library where applicable. `make check` runs the conformance vectors and C regression/concurrency tests. The `examples/ffi/` bridge is optional and is not part of the core ABI.
+
+## Install to a prefix
+
+On Linux and macOS, install to the default `/usr/local` prefix (permission to write there may be required):
 
 ```sh
-sudo install -D -m 0755 build/libcdin_kernel.so /usr/local/lib/libcdin_kernel.so
+make all shared
+sudo make install
 ```
 
-For the optional bridge, also stage `examples/ffi/cdin_ffi.h` if compiling against its declarations and `build/libcdin_ffi.so` if loading it at runtime. The Python, Go, and Node examples do not require the public header at runtime; they do require the bridge library.
-
-For development without a system-wide install, keep the artifacts under `build/` and set the language example's `CDIN_FFI_LIB` environment variable to the absolute path of the built bridge. On Linux, the dynamic loader may also need a configured library search path, such as `LD_LIBRARY_PATH` for local testing. Prefer an application-local library bundle or a proper package configuration for production.
-
-The Makefile does not currently assign versioned SONAME/install names or create symlink chains for system upgrades. A distro package should add that policy deliberately rather than inventing compatibility from the `0.2.0` draft ABI number.
-
-## 3. Windows / MinGW
-
-Build with a compatible MinGW-w64 toolchain and GNU Make. The generated files are normally:
-
-- `build/libcdin_kernel.a`: static archive;
-- `build/cdin_kernel.dll`: core dynamic library;
-- `build/libcdin_kernel.dll.a`: import library for linking to the DLL;
-- `build/cdin_ffi.dll` and `build/libcdin_ffi.dll.a`: optional bridge and its import library.
-
-At runtime, place the required DLL next to the executable or in a directory included in `PATH`. At compile time, include `include/` and link the matching static archive or import library. Do not link a `.dll.a` from a different build or ship a DLL without the exact compatible interface declarations.
-
-The Makefile targets are designed around GCC/Clang-style command-line flags. An MSVC build requires an equivalent project/build configuration and has not been verified by this repository's Makefile.
-
-## 4. Runtime loading from other languages
-
-Build the bridge:
+For an unprivileged, project-local install, use a prefix owned by your user:
 
 ```sh
-make ffi-shared
+make all shared
+make PREFIX="$HOME/.local" install
 ```
 
-Then point the example to the bridge location as appropriate for the shell:
+The installation contains:
+
+- `include/cdin/kernel.h` — the only public core header;
+- `lib/libcdin_kernel.a` — static library;
+- a versioned shared library and linker symlink(s) on Linux/macOS;
+- `lib/pkgconfig/cdin-kernel.pc` — `pkg-config` metadata;
+- on Windows, `bin/cdin_kernel.dll` and `lib/libcdin_kernel.dll.a` alongside the static library.
+
+The install recipe supports `DESTDIR` for package staging. This is useful for package managers and does **not** write into the real system directories:
 
 ```sh
-# Linux / macOS
-CDIN_FFI_LIB=/absolute/path/to/libcdin_ffi.so python examples/python/quickstart.py
+make DESTDIR="$PWD/stage" PREFIX=/usr/local install
 ```
 
-```powershell
-# Windows PowerShell
-$env:CDIN_FFI_LIB = 'C:\path\to\cdin_ffi.dll'
-python examples/python/quickstart.py
+The staged files will be under `stage/usr/local/`. Remove only the files installed by this project with `make PREFIX="$HOME/.local" uninstall` (use the same `PREFIX`, `includedir`, `libdir`, `bindir`, and `DESTDIR` values used during installation).
+
+## Windows with MSYS2 UCRT64
+
+Use the UCRT64 shell and a MinGW-w64 GCC toolchain; do not build the Windows library with a Linux compiler. For example:
+
+```sh
+make clean
+make CC=gcc all shared quickstart
+make CC=gcc check
+make CC=gcc PREFIX=/ucrt64 install
 ```
 
-Go's cgo linker flags are compile-time settings in `examples/go/main.go`, so changing `CDIN_FFI_LIB` alone does not change its link search path. Edit the example's `#cgo LDFLAGS` for the target platform and install location. Node's Koffi example reads `CDIN_FFI_LIB` at runtime.
+The Windows shared library is `bin/cdin_kernel.dll`; link-time consumers use `lib/libcdin_kernel.dll.a`. The static library is `lib/libcdin_kernel.a`. Keep the DLL beside your consuming executable or somewhere on the Windows DLL search path.
 
-See [language bindings](language-bindings.md) for full build/run examples and [getting started](getting-started.md) for the native build and test targets.
+## Link from a C project
 
-## 5. Version and release discipline
+A static link can use the header and archive directly:
 
-The public header currently reports ABI `0.2.0` and the project remains draft. For every application/package release:
+```sh
+cc -std=c11 -I"$HOME/.local/include" app.c \
+  "$HOME/.local/lib/libcdin_kernel.a" -o app
+```
 
-1. Build the native library from the same source revision as the header.
-2. Run `make check` before packaging.
-3. Include the license and preserve the package's source/version metadata.
-4. Keep static, shared, import, and bridge artifacts from the same build together.
-5. Rebuild foreign-language bindings when the header or binary ABI changes.
-6. Do not treat ABI `0.x` as a promise of binary compatibility across arbitrary revisions.
+For a shared-library consumer, use the platform linker/rpath conventions for your install prefix. With `pkg-config` installed, query the exported flags with:
+
+```sh
+pkg-config --cflags --libs cdin-kernel
+```
+
+The package's `.pc` file is relocatable with the installed `include/` and `lib/` layout. On Windows, use the UCRT64 `pkg-config`/`pkgconf` environment and keep `bin/` available for DLL loading.
+
+## Verify an installed copy
+
+CI stages an installation under a temporary prefix, then compiles and runs the example twice: once against the installed static archive and once against the installed shared library/import library. The same check can be run locally:
+
+```sh
+make DESTDIR="$PWD/build/stage" PREFIX=/cdin install
+STAGED_PREFIX="$PWD/build/stage/cdin"
+CC=cc scripts/verify-installed.sh "$STAGED_PREFIX"
+```
+
+The smoke test verifies the installed header and linker artifacts, loads the shared library at runtime, and checks the consumer's observable output. It does not by itself establish full ABI compatibility or replace the test suite.
+
+## Release archives
+
+A release package includes `include/`, `lib/`, `bin/` when the platform needs it, the license, the README/changelog, documentation, a quickstart source file, build information, and a SHA-256 checksum. Packages are produced only after the source tests and installed-consumer smoke test pass on the same runner that built the artifact.

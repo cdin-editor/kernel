@@ -1,0 +1,10 @@
+prefix=${pcfiledir}/../..
+exec_prefix=${prefix}
+libdir=${exec_prefix}/lib
+includedir=${prefix}/include
+
+Name: cdin-kernel
+Description: Binary-safe native text editing kernel with a C ABI
+Version: @VERSION@
+Libs: -L${libdir} -lcdin_kernel
+Cflags: -I${includedir}

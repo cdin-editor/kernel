@@ -5,12 +5,26 @@ CC      ?= cc
 AR      ?= ar
 RANLIB  ?= ranlib
 
+# `OS=Windows_NT` is set by native Windows environments, but MSYS2/UCRT64
+# intentionally runs a POSIX shell on Windows. Detect the host and shell
+# separately so Windows DLLs can be built without routing Bash commands through
+# cmd.exe.
+HOST_OS := $(shell uname -s 2>/dev/null)
+WINDOWS_HOST := $(if $(filter Windows_NT,$(OS)),1,$(if $(filter MINGW% MSYS% CYGWIN%,$(HOST_OS)),1,0))
+WINDOWS_CMD_SHELL := $(if $(filter Windows_NT,$(OS)),$(if $(filter MINGW% MSYS% CYGWIN%,$(HOST_OS)),0,1),0)
+
+# The public header is the single source of truth for the ABI version.
+ABI_MAJOR := $(shell sed -n 's/^#define CDIN_KERNEL_ABI_MAJOR \([0-9][0-9]*\)u/\1/p' include/cdin/kernel.h)
+ABI_MINOR := $(shell sed -n 's/^#define CDIN_KERNEL_ABI_MINOR \([0-9][0-9]*\)u/\1/p' include/cdin/kernel.h)
+ABI_PATCH := $(shell sed -n 's/^#define CDIN_KERNEL_ABI_PATCH \([0-9][0-9]*\)u/\1/p' include/cdin/kernel.h)
+ABI_VERSION := $(ABI_MAJOR).$(ABI_MINOR).$(ABI_PATCH)
+
 WARN    = -Wall -Wextra -Wshadow -Wconversion -Wstrict-prototypes -Wformat=2 -Wpedantic -Werror
 CFLAGS  ?= -O2
 CFLAGS  += -std=c11 -Iinclude -Isrc $(WARN) -MMD -MP
 LDFLAGS ?=
 LDLIBS  ?=
-ifneq ($(OS),Windows_NT)
+ifneq ($(WINDOWS_CMD_SHELL),1)
   LDLIBS += -pthread
 endif
 
@@ -24,27 +38,45 @@ FUZZ   = $(BUILD)/fuzz_ops
 SH_OBJ = $(BUILD)/shared_obj
 FFI_OBJ = $(BUILD)/ffi_obj
 
-ifeq ($(OS),Windows_NT)
+PREFIX       ?= /usr/local
+includedir   ?= $(PREFIX)/include
+libdir       ?= $(PREFIX)/lib
+bindir       ?= $(PREFIX)/bin
+pkgconfigdir ?= $(libdir)/pkgconfig
+
+ifeq ($(WINDOWS_HOST),1)
   SHARED = $(BUILD)/cdin_kernel.dll
   FFI_SHARED = $(BUILD)/cdin_ffi.dll
   SHARED_LINK_FLAGS = -shared
+  SHARED_LINK_OPTIONS =
+  FFI_LINK_OPTIONS =
   SHARED_EXTRA_LIBS = -Wl,--out-implib,$(BUILD)/libcdin_kernel.dll.a
   FFI_EXTRA_LIBS = -Wl,--out-implib,$(BUILD)/libcdin_ffi.dll.a
   SHARED_CFLAGS = -DCDIN_KERNEL_BUILD_DLL
-else ifeq ($(shell uname -s),Darwin)
+  SHARED_ALIAS =
+  FFI_ALIAS =
+else ifeq ($(HOST_OS),Darwin)
   SHARED = $(BUILD)/libcdin_kernel.dylib
   FFI_SHARED = $(BUILD)/libcdin_ffi.dylib
   SHARED_LINK_FLAGS = -dynamiclib
+  SHARED_LINK_OPTIONS = -Wl,-install_name,@rpath/libcdin_kernel.$(ABI_MAJOR).dylib
+  FFI_LINK_OPTIONS = -Wl,-install_name,@rpath/libcdin_ffi.dylib
   SHARED_EXTRA_LIBS =
   FFI_EXTRA_LIBS =
   SHARED_CFLAGS = -fPIC -fvisibility=hidden
+  SHARED_ALIAS = $(BUILD)/libcdin_kernel.$(ABI_MAJOR).dylib
+  FFI_ALIAS = $(BUILD)/libcdin_ffi.$(ABI_MAJOR).dylib
 else
   SHARED = $(BUILD)/libcdin_kernel.so
   FFI_SHARED = $(BUILD)/libcdin_ffi.so
   SHARED_LINK_FLAGS = -shared
+  SHARED_LINK_OPTIONS = -Wl,-soname,libcdin_kernel.so.$(ABI_MAJOR)
+  FFI_LINK_OPTIONS = -Wl,-soname,libcdin_ffi.so.$(ABI_MAJOR)
   SHARED_EXTRA_LIBS =
   FFI_EXTRA_LIBS =
   SHARED_CFLAGS = -fPIC -fvisibility=hidden
+  SHARED_ALIAS = $(BUILD)/libcdin_kernel.so.$(ABI_MAJOR)
+  FFI_ALIAS = $(BUILD)/libcdin_ffi.so.$(ABI_MAJOR)
 endif
 
 # Recursive: src/*.c plus every module directory under src/.
@@ -60,8 +92,9 @@ K_OBJ   = $(addprefix $(OBJ)/,$(addsuffix .o,$(K_FLAT)))
 R_OBJ   = $(patsubst conformance/runner/%.c,$(OBJ)/runner_%.o,$(RUN_SRC))
 VECS    = $(sort $(wildcard conformance/vec/*/*.vec))
 
-ifeq ($(OS),Windows_NT)
-  # cmd reads a forward slash as a switch, so paths go through subst.
+ifeq ($(WINDOWS_CMD_SHELL),1)
+  # Native cmd.exe build. MSYS2/UCRT64 uses the POSIX branch even though its
+  # target binaries are Windows DLLs.
   DEL = cmd /c del /q $(subst /,\\,$(1))
   MKDIR = powershell -NoProfile -Command "New-Item -ItemType Directory -Force -Path build/obj,build/shared_obj,build/ffi_obj | Out-Null"
 else
@@ -71,25 +104,35 @@ endif
 
 $(shell $(MKDIR))
 
-.PHONY: all shared ffi-shared quickstart check check-vectors check-tests vectors asan tsan fuzz-build bench clean trace tests
+.PHONY: all shared ffi-shared quickstart check check-vectors check-tests vectors asan tsan fuzz-build bench clean trace tests install uninstall
 
 all: $(LIB)
 
 # Shared builds use separately compiled position-independent objects. `ffi-shared`
 # adds the optional examples/ffi bridge, not part of the stable public ABI.
-shared: $(SHARED)
-ffi-shared: $(FFI_SHARED)
+shared: $(SHARED) $(SHARED_ALIAS)
+ffi-shared: $(FFI_SHARED) $(FFI_ALIAS)
 quickstart: $(BUILD)/quickstart
 	$(BUILD)/quickstart
 
 $(SHARED): $(addprefix $(SH_OBJ)/,$(addsuffix .o,$(K_FLAT)))
-	$(CC) $(SHARED_LINK_FLAGS) $(LDFLAGS) $(SHARED_EXTRA_LIBS) -o $@ $^ $(LDLIBS)
+	$(CC) $(SHARED_LINK_FLAGS) $(LDFLAGS) $(SHARED_LINK_OPTIONS) $(SHARED_EXTRA_LIBS) -o $@ $^ $(LDLIBS)
 
 $(FFI_SHARED): $(addprefix $(SH_OBJ)/,$(addsuffix .o,$(K_FLAT))) $(FFI_OBJ)/cdin_ffi.o
-	$(CC) $(SHARED_LINK_FLAGS) $(LDFLAGS) $(FFI_EXTRA_LIBS) -o $@ $^ $(LDLIBS)
+	$(CC) $(SHARED_LINK_FLAGS) $(LDFLAGS) $(FFI_LINK_OPTIONS) $(FFI_EXTRA_LIBS) -o $@ $^ $(LDLIBS)
+
+ifneq ($(strip $(SHARED_ALIAS)),)
+$(SHARED_ALIAS): $(SHARED)
+	ln -sfn $(notdir $(SHARED)) $@
+endif
+
+ifneq ($(strip $(FFI_ALIAS)),)
+$(FFI_ALIAS): $(FFI_SHARED)
+	ln -sfn $(notdir $(FFI_SHARED)) $@
+endif
 
 $(BUILD)/quickstart: examples/c/quickstart.c $(LIB) include/cdin/kernel.h
-	$(CC) -std=c11 -Wall -Wextra -Wpedantic -Werror -Iinclude $< $(LIB) -o $@
+	$(CC) -std=c11 -Wall -Wextra -Wpedantic -Werror -Iinclude $< $(LIB) $(LDLIBS) -o $@
 
 
 $(LIB): $(K_OBJ)
@@ -128,7 +171,7 @@ check: check-vectors check-tests
 # One process per vector file. The kernel keeps some state at process scope
 # (shutdown flag, subscriber table), so a defect in one vector would otherwise
 # contaminate every file that runs after it and hide the real result.
-ifeq ($(OS),Windows_NT)
+ifeq ($(WINDOWS_CMD_SHELL),1)
   # cmd treats the forward slashes in the binary path as switches.
   RUNNER_EXE = $(subst /,\\,$(RUNNER))
   VEC_LOOP = cmd /c "for %f in ($(VECS)) do @$(RUNNER_EXE) %f || exit /b 1"
@@ -165,20 +208,18 @@ tests: check-tests
 asan: CFLAGS  += -fsanitize=address,undefined -g
 asan: LDFLAGS += -fsanitize=address,undefined
 asan:
-	-@$(MAKE) clean
-	@$(MAKE) vectors
-	@$(MAKE) check-tests; \
-	  if [ $$? -ne 0 ]; then echo "asan gate RED: the C tests failed"; exit 1; fi; \
-	  echo "asan gate GREEN: every vector and every C test ran with no report"
+	$(MAKE) clean
+	$(MAKE) check-vectors
+	$(MAKE) check-tests
+	@echo "asan gate GREEN: every vector and every C test passed with no sanitizer report"
 
 tsan: CFLAGS  += -fsanitize=thread -g
 tsan: LDFLAGS += -fsanitize=thread
 tsan:
-	-@$(MAKE) clean
-	@$(MAKE) vectors
-	@$(MAKE) check-tests; \
-	  if [ $$? -ne 0 ]; then echo "tsan gate RED: the C tests failed"; exit 1; fi; \
-	  echo "tsan gate GREEN: every vector and every C test ran with no report"
+	$(MAKE) clean
+	$(MAKE) check-vectors
+	$(MAKE) check-tests
+	@echo "tsan gate GREEN: every vector and every C test passed with no sanitizer report"
 
 # libFuzzer targets (clang only).
 fuzz-build: CFLAGS  += -fsanitize=fuzzer,address,undefined -g
@@ -212,7 +253,37 @@ $(BENCH): bench/bench.c $(LIB) support/strict_alloc.o
 trace: $(RUNNER)
 	$(RUNNER) --trace $(VECS)
 
+# Install the public header and both link-time/runtime forms of the core
+# library. DESTDIR is intended for package staging and CI smoke tests.
+install: all shared
+	install -d "$(DESTDIR)$(includedir)/cdin" "$(DESTDIR)$(libdir)" "$(DESTDIR)$(bindir)" "$(DESTDIR)$(pkgconfigdir)"
+	install -m 0644 include/cdin/kernel.h "$(DESTDIR)$(includedir)/cdin/kernel.h"
+	install -m 0644 $(LIB) "$(DESTDIR)$(libdir)/libcdin_kernel.a"
+	sed -e 's|@VERSION@|$(ABI_VERSION)|g' packaging/cdin-kernel.pc.in > "$(DESTDIR)$(pkgconfigdir)/cdin-kernel.pc"
+ifeq ($(WINDOWS_HOST),1)
+	install -m 0644 $(BUILD)/libcdin_kernel.dll.a "$(DESTDIR)$(libdir)/libcdin_kernel.dll.a"
+	install -m 0755 $(SHARED) "$(DESTDIR)$(bindir)/cdin_kernel.dll"
+else ifeq ($(HOST_OS),Darwin)
+	install -m 0755 $(SHARED) "$(DESTDIR)$(libdir)/libcdin_kernel.$(ABI_VERSION).dylib"
+	ln -sfn "libcdin_kernel.$(ABI_VERSION).dylib" "$(DESTDIR)$(libdir)/libcdin_kernel.$(ABI_MAJOR).dylib"
+	ln -sfn "libcdin_kernel.$(ABI_MAJOR).dylib" "$(DESTDIR)$(libdir)/libcdin_kernel.dylib"
+else
+	install -m 0755 $(SHARED) "$(DESTDIR)$(libdir)/libcdin_kernel.so.$(ABI_VERSION)"
+	ln -sfn "libcdin_kernel.so.$(ABI_VERSION)" "$(DESTDIR)$(libdir)/libcdin_kernel.so.$(ABI_MAJOR)"
+	ln -sfn "libcdin_kernel.so.$(ABI_MAJOR)" "$(DESTDIR)$(libdir)/libcdin_kernel.so"
+endif
+
+uninstall:
+	rm -f "$(DESTDIR)$(includedir)/cdin/kernel.h" "$(DESTDIR)$(libdir)/libcdin_kernel.a" "$(DESTDIR)$(pkgconfigdir)/cdin-kernel.pc"
+ifeq ($(WINDOWS_HOST),1)
+	rm -f "$(DESTDIR)$(libdir)/libcdin_kernel.dll.a" "$(DESTDIR)$(bindir)/cdin_kernel.dll"
+else ifeq ($(HOST_OS),Darwin)
+	rm -f "$(DESTDIR)$(libdir)/libcdin_kernel.$(ABI_VERSION).dylib" "$(DESTDIR)$(libdir)/libcdin_kernel.$(ABI_MAJOR).dylib" "$(DESTDIR)$(libdir)/libcdin_kernel.dylib"
+else
+	rm -f "$(DESTDIR)$(libdir)/libcdin_kernel.so.$(ABI_VERSION)" "$(DESTDIR)$(libdir)/libcdin_kernel.so.$(ABI_MAJOR)" "$(DESTDIR)$(libdir)/libcdin_kernel.so"
+endif
+
 clean:
-	-$(call DEL,$(OBJ)/*.o $(OBJ)/*.d $(SH_OBJ)/*.o $(SH_OBJ)/*.d $(FFI_OBJ)/*.o $(FFI_OBJ)/*.d $(LIB) $(SHARED) $(FFI_SHARED) $(BUILD)/libcdin_kernel.dll.a $(BUILD)/libcdin_ffi.dll.a $(BUILD)/quickstart $(RUNNER) $(TESTS) $(BENCH) $(FUZZ) build/fuzz_abi build/fuzz_classifiers build/fuzz_vector_parser support/strict_alloc.o)
+	-$(call DEL,$(OBJ)/*.o $(OBJ)/*.d $(SH_OBJ)/*.o $(SH_OBJ)/*.d $(FFI_OBJ)/*.o $(FFI_OBJ)/*.d $(LIB) $(SHARED) $(FFI_SHARED) $(SHARED_ALIAS) $(FFI_ALIAS) $(BUILD)/libcdin_kernel.dll.a $(BUILD)/libcdin_ffi.dll.a $(BUILD)/quickstart $(RUNNER) $(TESTS) $(BENCH) $(FUZZ) build/fuzz_abi build/fuzz_classifiers build/fuzz_vector_parser support/strict_alloc.o)
 
 -include $(wildcard $(OBJ)/*.d $(SH_OBJ)/*.d $(FFI_OBJ)/*.d)

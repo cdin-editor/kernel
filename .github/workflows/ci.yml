@@ -1,84 +1,128 @@
 name: CI
+
 on:
   push:
     branches: [main, develop]
   pull_request:
+
 permissions:
   contents: read
 
 jobs:
-  # The conformance gate. `make check` exits non-zero when a vector fails, has a
-  # syntax error, or when no vector ran at all.
-  conformance:
-    name: check (${{ matrix.os }}, ${{ matrix.cc }})
+  build-test-install:
+    name: ${{ matrix.id }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-latest, cc: gcc, tsan: true }
-          - { os: ubuntu-latest, cc: clang, tsan: true }
-          - { os: windows-latest, cc: msys2-ucrt64, tsan: false }
-    steps:
-      - uses: actions/checkout@v4
+          - id: linux-gcc
+            os: ubuntu-latest
+            cc: gcc
+          - id: linux-clang
+            os: ubuntu-latest
+            cc: clang
+          - id: macos-clang
+            os: macos-latest
+            cc: clang
+          - id: windows-ucrt64
+            os: windows-latest
+            cc: gcc
 
-      - uses: msys2/setup-msys2@v2
-        if: matrix.cc == 'msys2-ucrt64'
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Linux toolchains
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang pkg-config
+
+      - name: Install Windows UCRT64 toolchain
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
         with:
           msystem: UCRT64
           update: true
           install: >-
             mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-pkgconf
             make
+            zip
 
-      - name: Build and run vectors (gcc)
-        if: matrix.cc == 'gcc'
+      - name: Build all core library forms (Linux/macOS)
+        if: runner.os != 'Windows'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc clang make
-          make CC=gcc check
+          make CC=${{ matrix.cc }} clean
+          make CC=${{ matrix.cc }} all shared ffi-shared quickstart
 
-      - name: Build and run vectors (clang)
-        if: matrix.cc == 'clang'
+      - name: Build all core library forms (Windows UCRT64)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
         run: |
-          sudo apt-get update
-          sudo apt-get install -y clang make
-          make CC=clang check
+          make OS= SHELL=/usr/bin/bash CC=gcc clean
+          make OS= SHELL=/usr/bin/bash CC=gcc all shared ffi-shared quickstart
 
-      - name: Build and run vectors (MSYS2 UCRT64)
-        if: matrix.cc == 'msys2-ucrt64'
+      - name: Run conformance, regression, and concurrency tests (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: make CC=${{ matrix.cc }} check
+
+      - name: Run conformance, regression, and concurrency tests (Windows UCRT64)
+        if: runner.os == 'Windows'
         shell: msys2 {0}
         run: make OS= SHELL=/usr/bin/bash CC=gcc check
 
-  sanitizers:
-    name: asan (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest]
-    steps:
-      - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y gcc make
-      - name: ASan + UBSan on every vector
-        run: make CC=gcc asan
+      - name: Check public header from C11 and C++17 (Linux/macOS)
+        if: runner.os != 'Windows'
+        env:
+          CC: ${{ matrix.cc }}
+        run: scripts/check-public-header.sh
 
-  threads:
-    name: tsan
+      - name: Check public header from C11 and C++17 (Windows UCRT64)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        env:
+          CC: gcc
+          CXX: g++
+        run: scripts/check-public-header.sh
+
+      - name: Stage installation and test installed static/shared consumers (Linux/macOS)
+        if: runner.os != 'Windows'
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          stage="$PWD/build/stage"
+          make CC=${{ matrix.cc }} DESTDIR="$stage" PREFIX=/cdin install
+          scripts/verify-installed.sh "$stage/cdin"
+          make CC=${{ matrix.cc }} DESTDIR="$stage" PREFIX=/cdin uninstall
+          test ! -e "$stage/cdin/include/cdin/kernel.h"
+          test ! -e "$stage/cdin/lib/libcdin_kernel.a"
+
+      - name: Stage installation and test installed static/shared consumers (Windows UCRT64)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        env:
+          CC: gcc
+        run: |
+          stage="$PWD/build/stage"
+          make OS= SHELL=/usr/bin/bash CC=gcc DESTDIR="$stage" PREFIX=/cdin install
+          scripts/verify-installed.sh "$stage/cdin"
+          make OS= SHELL=/usr/bin/bash CC=gcc DESTDIR="$stage" PREFIX=/cdin uninstall
+          test ! -e "$stage/cdin/include/cdin/kernel.h"
+          test ! -e "$stage/cdin/lib/libcdin_kernel.a"
+
+  asan-ubsan:
+    name: ASan + UBSan (all conformance and C tests)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y gcc make
-      - name: TSan on every vector
-        run: make CC=gcc tsan
+      - uses: actions/checkout@v7
+      - run: sudo apt-get update && sudo apt-get install -y build-essential
+      - run: make CC=gcc asan
 
-  headers:
-    name: header compiles as C and C++
+  tsan:
+    name: TSan (all conformance and C tests)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y g++ make
-      - name: C11
-        run: mkdir -p build && printf '#include "cdin/kernel.h"\nint main(void){return 0;}\n' > build/hdr.c && gcc -std=c11 -Wall -Wextra -Wpedantic -Werror -Iinclude -c build/hdr.c -o build/hdr.o
-      - name: C++17
-        run: printf '#include "cdin/kernel.h"\nint main(){return 0;}\n' > build/hdr.cpp && g++ -std=c++17 -Wall -Wextra -Wpedantic -Werror -Iinclude -c build/hdr.cpp -o build/hdr.o
+      - uses: actions/checkout@v7
+      - run: sudo apt-get update && sudo apt-get install -y build-essential
+      - run: make CC=gcc tsan
