@@ -1,0 +1,17 @@
+{
+  "name": "cdin-kernel-ffi-example",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node quickstart.mjs",
+    "start:ts": "tsx quickstart.ts"
+  },
+  "dependencies": {
+    "koffi": "^3.3.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}
