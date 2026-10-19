@@ -1,0 +1,87 @@
+vector txn.basic.commit covers TXN-001 TXN-002 TXN-003 TXN-004 TXN-005
+  create_doc bytes="hello"
+  expect CDIN_OK handle=k1
+  txn_begin handle=k1 expected_version=0
+  expect CDIN_OK handle=k2
+  replace_tx handle=k2 start=5 end=5 bytes=" world"
+  expect CDIN_OK
+  replace_tx handle=k2 start=0 end=5 bytes="goodbye"
+  expect CDIN_OK
+  txn_commit handle=k2
+  expect CDIN_OK new_version=1
+  version handle=k1
+  expect CDIN_OK version=1
+  read handle=k1 start=0 end=13
+  expect CDIN_OK data="goodbye world"
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector txn.basic.abort covers TXN-005 TXN-014
+  create_doc bytes="hello"
+  expect CDIN_OK handle=k1
+  txn_begin handle=k1 expected_version=0
+  expect CDIN_OK handle=k2
+  replace_tx handle=k2 start=5 end=5 bytes=" world"
+  expect CDIN_OK
+  txn_abort handle=k2
+  expect CDIN_OK
+  version handle=k1
+  expect CDIN_OK version=0
+  read handle=k1 start=0 end=5
+  expect CDIN_OK data="hello"
+  txn_begin handle=k1 expected_version=0
+  expect CDIN_OK handle=k3
+  txn_abort handle=k3
+  expect CDIN_OK
+  txn_begin handle=k1 expected_version=0
+  expect CDIN_OK handle=k4
+  txn_abort handle=k4
+  expect CDIN_OK
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector txn.basic.stale_version covers TXN-010
+  create_doc bytes="hello"
+  expect CDIN_OK handle=k1
+  txn_begin handle=k1 expected_version=5
+  expect CDIN_STALE_VERSION
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector txn.basic.nested_rejected covers TXN-020
+  create_doc bytes="hello"
+  expect CDIN_OK handle=k1
+  txn_begin handle=k1 expected_version=0
+  expect CDIN_OK handle=k2
+  txn_begin handle=k1 expected_version=0
+  expect CDIN_INVALID_STATE
+  txn_abort handle=k2
+  expect CDIN_OK
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector txn.basic.busy covers TXN-007
+  create_doc bytes="hello"
+  expect CDIN_OK handle=k1
+  txn_begin handle=k1 expected_version=0
+  expect CDIN_OK handle=k2
+  replace handle=k1 start=5 end=5 bytes="!" expected_version=0
+  expect CDIN_BUSY
+  txn_abort handle=k2
+  expect CDIN_OK
+  replace handle=k1 start=5 end=5 bytes="!" expected_version=0
+  expect CDIN_OK new_version=1
+  close_doc handle=k1
+  expect CDIN_OK
+
+vector txn.basic.empty_commit covers TXN-012
+  create_doc bytes="hello"
+  expect CDIN_OK handle=k1
+  txn_begin handle=k1 expected_version=0
+  expect CDIN_OK handle=k2
+  txn_commit handle=k2
+  expect CDIN_OK
+  version handle=k1
+  expect CDIN_OK version=0
+  close_doc handle=k1
+  expect CDIN_OK
