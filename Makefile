@@ -20,6 +20,8 @@ ABI_MAJOR := $(shell awk '$$2 == "CDIN_KERNEL_ABI_MAJOR" { value = $$3; sub(/u$$
 ABI_MINOR := $(shell awk '$$2 == "CDIN_KERNEL_ABI_MINOR" { value = $$3; sub(/u$$/, "", value); print value; exit }' include/cdin/kernel.h)
 ABI_PATCH := $(shell awk '$$2 == "CDIN_KERNEL_ABI_PATCH" { value = $$3; sub(/u$$/, "", value); print value; exit }' include/cdin/kernel.h)
 ABI_VERSION := $(ABI_MAJOR).$(ABI_MINOR).$(ABI_PATCH)
+# Package version may differ from the draft C ABI version (e.g. package 0.1.0 / ABI 0.2.0).
+PACKAGE_VERSION ?= $(ABI_VERSION)
 
 WARN    = -Wall -Wextra -Wshadow -Wconversion -Wstrict-prototypes -Wformat=2 -Wpedantic -Werror
 CFLAGS  ?= -O2
@@ -261,7 +263,7 @@ install: all shared
 	install -d "$(DESTDIR)$(includedir)/cdin" "$(DESTDIR)$(libdir)" "$(DESTDIR)$(bindir)" "$(DESTDIR)$(pkgconfigdir)"
 	install -m 0644 include/cdin/kernel.h "$(DESTDIR)$(includedir)/cdin/kernel.h"
 	install -m 0644 $(LIB) "$(DESTDIR)$(libdir)/libcdin_kernel.a"
-	sed -e 's|@VERSION@|$(ABI_VERSION)|g' packaging/cdin-kernel.pc.in > "$(DESTDIR)$(pkgconfigdir)/cdin-kernel.pc"
+	sed -e 's|@VERSION@|$(PACKAGE_VERSION)|g' packaging/cdin-kernel.pc.in > "$(DESTDIR)$(pkgconfigdir)/cdin-kernel.pc"
 ifeq ($(WINDOWS_HOST),1)
 	install -m 0644 $(BUILD)/libcdin_kernel.dll.a "$(DESTDIR)$(libdir)/libcdin_kernel.dll.a"
 	install -m 0755 $(SHARED) "$(DESTDIR)$(bindir)/cdin_kernel.dll"

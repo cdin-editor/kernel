@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and build targets for sanitizer, benchmark, fuzz, and trace workflows.
 - Portable Makefile build and initial install/package support for native library
   consumers.
+- GitHub Release packaging for Linux x86-64, macOS, and Windows x86-64 (MinGW-w64
+  UCRT64), including install scripts, `pkg-config` metadata, and SHA-256 checksums.
+- Release CI verifies the downloaded archive's installer and compiles/runs consumers
+  against the installed static and shared libraries before attaching assets.
 
 ### Fixed
 - Memory-lifetime, allocation-failure atomicity, document-table growth, edit-tail
@@ -39,9 +43,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `CDIN_UNSUPPORTED`.
 - Regex engine integration, complete Unicode case folding, and full Unicode
   grapheme-cluster segmentation are not included in this release.
-- The spec and implementation still require reconciliation before claiming full
-  spec conformance. See `RELEASE-READINESS-REVIEW.md` when available in the
-  release-work bundle for the current readiness assessment.
+- Full spec conformance is not claimed for this initial release. See `docs/abi.md`
+  and `docs/limits-and-status.md` for ABI constraints, unsupported behavior, and
+  documented limitations.
 
 ## [Unreleased]
 

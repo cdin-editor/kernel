@@ -90,4 +90,10 @@ The smoke test verifies the installed header and linker artifacts, loads the sha
 
 ## Release archives
 
-A release package includes `include/`, `lib/`, `bin/` when the platform needs it, the license, the README/changelog, documentation, a quickstart source file, build information, and a SHA-256 checksum. Packages are produced only after the source tests and installed-consumer smoke test pass on the same runner that built the artifact.
+Each GitHub Release provides one archive per supported runner: Linux x86-64 (`.tar.gz`), macOS (`.tar.gz`), and Windows x86-64 with MinGW-w64 UCRT64 (`.zip`). Each archive includes the public header, static library, shared library/import files where supported, `pkg-config` metadata, docs, quickstart example, build information, and an installer (`install.sh` for Linux/macOS or `install.ps1` for Windows). An adjacent `.sha256` file is published for each archive.
+
+For Linux/macOS, extract the `.tar.gz` and run `./install.sh`; by default it installs to `~/.local` without requiring root. Use `./install.sh --prefix /path/to/prefix` to choose a destination. For a system-wide install, choose a system prefix and use the appropriate privileges.
+
+For Windows, extract the `.zip`, open PowerShell in the extracted directory, and run `./install.ps1`. The default destination is `%LOCALAPPDATA%\cdin-kernel`; `-Prefix` changes it and `-AddBinToUserPath` optionally adds the DLL directory to the user's PATH. The Windows package targets MinGW-w64 UCRT64 and does not claim MSVC ABI compatibility.
+
+`BUILD-INFO.txt` records both the package version and the C ABI version. They are tracked separately; for example, release package `0.1.0` may contain the draft C ABI `0.2.0`. Release packages are attached to the GitHub Release only after the source tests, installed-consumer smoke test, and archive-install test pass on the runner that built each artifact.

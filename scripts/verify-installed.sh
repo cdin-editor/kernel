@@ -63,6 +63,10 @@ if command -v pkg-config >/dev/null 2>&1; then
     echo "pkg-config metadata is missing a version" >&2
     exit 1
   fi
+  if [[ -n "${EXPECTED_PACKAGE_VERSION:-}" && "$version" != "$EXPECTED_PACKAGE_VERSION" ]]; then
+    echo "pkg-config reports $version; expected package version $EXPECTED_PACKAGE_VERSION" >&2
+    exit 1
+  fi
   echo "pkg-config metadata: $version"
 fi
 

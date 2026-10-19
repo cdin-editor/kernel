@@ -1,11 +1,10 @@
-name: Release candidate
+name: Build, test, and publish release
 
 on:
   push:
+    # Stable releases (v0.1.0) and prereleases (v0.2.0-alpha.1, etc.).
     tags:
-      - 'v*-alpha.*'
-      - 'v*-beta.*'
-      - 'v*-rc.*'
+      - 'v*'
   workflow_dispatch:
 
 permissions:
@@ -47,57 +46,80 @@ jobs:
             mingw-w64-ucrt-x86_64-pkgconf
             make
             zip
+            unzip
 
-      - name: Determine and validate package version
+      - name: Determine package version and validate release tag
         id: version
         shell: bash
         run: |
+          set -euo pipefail
           major="$(sed -n 's/^#define CDIN_KERNEL_ABI_MAJOR \([0-9][0-9]*\)u/\1/p' include/cdin/kernel.h)"
           minor="$(sed -n 's/^#define CDIN_KERNEL_ABI_MINOR \([0-9][0-9]*\)u/\1/p' include/cdin/kernel.h)"
           patch="$(sed -n 's/^#define CDIN_KERNEL_ABI_PATCH \([0-9][0-9]*\)u/\1/p' include/cdin/kernel.h)"
           abi_version="${major}.${minor}.${patch}"
+
           if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[0-9]+)?$ ]]; then
+              echo "Unsupported release tag: $GITHUB_REF_NAME" >&2
+              echo "Use vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-(alpha|beta|rc).N" >&2
+              exit 1
+            fi
             package_version="${GITHUB_REF_NAME#v}"
-            tag_base="${package_version%%-*}"
-            if [[ "$tag_base" != "$abi_version" ]]; then
-              echo "tag $GITHUB_REF_NAME does not match header ABI version $abi_version" >&2
+            if [[ "$package_version" != *-* ]] && ! grep -Fq "## [${package_version}]" CHANGELOG.md; then
+              echo "CHANGELOG.md has no section for stable release ${package_version}" >&2
               exit 1
             fi
           else
             package_version="${abi_version}-dev.${GITHUB_SHA:0:7}"
           fi
-          echo "package_version=$package_version" >> "$GITHUB_OUTPUT"
-          echo "ABI version: $abi_version; package version: $package_version"
 
-      - name: Build all library forms, run tests, and check installed consumers (Linux/macOS)
+          echo "package_version=$package_version" >> "$GITHUB_OUTPUT"
+          echo "Package version: $package_version"
+          echo "C ABI version from include/cdin/kernel.h: $abi_version"
+          if [[ "$package_version" != "$abi_version" ]]; then
+            echo "Package and C ABI versions are intentionally tracked separately."
+          fi
+
+      - name: Build, test, install, and package (Linux/macOS)
         if: runner.os != 'Windows'
         env:
           CC: ${{ matrix.cc }}
+          PACKAGE_VERSION: ${{ steps.version.outputs.package_version }}
         run: |
+          set -euo pipefail
           make CC="$CC" clean
           make CC="$CC" all shared ffi-shared quickstart
           make CC="$CC" check
           CC="$CC" bash scripts/check-public-header.sh
+          rm -rf dist
           stage="$PWD/build/stage"
-          make CC="$CC" DESTDIR="$stage" PREFIX=/cdin install
-          CC="$CC" bash scripts/verify-installed.sh "$stage/cdin"
-          PACKAGE_VERSION='${{ steps.version.outputs.package_version }}' STAGED_PREFIX="$stage/cdin" bash scripts/package-release.sh
+          make CC="$CC" PACKAGE_VERSION="$PACKAGE_VERSION" DESTDIR="$stage" PREFIX=/cdin install
+          EXPECTED_PACKAGE_VERSION="$PACKAGE_VERSION" CC="$CC" bash scripts/verify-installed.sh "$stage/cdin"
+          PACKAGE_VERSION="$PACKAGE_VERSION" STAGED_PREFIX="$stage/cdin" bash scripts/package-release.sh
+          archive="$(find dist -maxdepth 1 -type f -name '*.tar.gz' -print -quit)"
+          test -n "$archive"
+          CC="$CC" bash scripts/test-release-package.sh "$archive" "$PACKAGE_VERSION"
 
-      - name: Build all library forms, run tests, and check installed consumers (Windows UCRT64)
+      - name: Build, test, install, and package (Windows UCRT64)
         if: runner.os == 'Windows'
         shell: msys2 {0}
         env:
           CC: gcc
           PACKAGE_VERSION: ${{ steps.version.outputs.package_version }}
         run: |
+          set -euo pipefail
           make OS= SHELL=/usr/bin/bash CC=gcc clean
           make OS= SHELL=/usr/bin/bash CC=gcc all shared ffi-shared quickstart
           make OS= SHELL=/usr/bin/bash CC=gcc check
           CC=gcc CXX=g++ bash scripts/check-public-header.sh
+          rm -rf dist
           stage="$PWD/build/stage"
-          make OS= SHELL=/usr/bin/bash CC=gcc DESTDIR="$stage" PREFIX=/cdin install
-          CC=gcc bash scripts/verify-installed.sh "$stage/cdin"
+          make OS= SHELL=/usr/bin/bash CC=gcc PACKAGE_VERSION="$PACKAGE_VERSION" DESTDIR="$stage" PREFIX=/cdin install
+          EXPECTED_PACKAGE_VERSION="$PACKAGE_VERSION" CC=gcc bash scripts/verify-installed.sh "$stage/cdin"
           PACKAGE_VERSION="$PACKAGE_VERSION" STAGED_PREFIX="$stage/cdin" bash scripts/package-release.sh
+          archive="$(find dist -maxdepth 1 -type f -name '*.zip' -print -quit)"
+          test -n "$archive"
+          CC=gcc bash scripts/test-release-package.sh "$archive" "$PACKAGE_VERSION"
 
       - name: Upload platform package and checksum
         uses: actions/upload-artifact@v7
@@ -111,15 +133,18 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  publish-prerelease:
-    name: Publish GitHub prerelease
+  publish-release:
+    name: Publish GitHub Release with downloadable assets
     if: github.event_name == 'push' && github.ref_type == 'tag'
     needs: build-test-package
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/checkout@v7
+
+      - name: Download packages built and tested on each OS
+        uses: actions/download-artifact@v8
         with:
           pattern: cdin-kernel-assets-*
           path: release-assets
@@ -129,15 +154,59 @@ jobs:
         run: |
           set -eu
           find release-assets -maxdepth 1 -type f -print
-          test "$(find release-assets -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.zip' \) | wc -l)" -eq 3
-          test "$(find release-assets -maxdepth 1 -type f -name '*.sha256' | wc -l)" -eq 3
+          package_count="$(find release-assets -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.zip' \) | wc -l)"
+          checksum_count="$(find release-assets -maxdepth 1 -type f -name '*.sha256' | wc -l)"
+          test "$package_count" -eq 3
+          test "$checksum_count" -eq 3
 
-      - name: Publish prerelease and assets
+      - name: Prepare release notes from CHANGELOG.md
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          base_version="${version%%-*}"
+          heading="## [${version}]"
+          if ! grep -Fq "$heading" CHANGELOG.md; then
+            heading="## [${base_version}]"
+          fi
+
+          awk -v target="$heading" '
+            /^## \[/ {
+              if (found) exit
+              if (index($0, target) == 1) found = 1
+            }
+            found { print }
+          ' CHANGELOG.md > release-notes.md
+
+          if [[ ! -s release-notes.md ]]; then
+            if [[ "$version" != *-* ]]; then
+              echo "No matching CHANGELOG section found for stable release $version" >&2
+              exit 1
+            fi
+            printf '## cdin-kernel %s\n\nSee [CHANGELOG.md](CHANGELOG.md) for development changes.\n' "$version" > release-notes.md
+          fi
+
+          cat >> release-notes.md <<'NOTES'
+
+          ---
+
+          ## Downloadable assets
+
+          - **Linux x86-64:** `.tar.gz` archive with `install.sh`, public header, static/shared libraries, pkg-config metadata, documentation, and quickstart example.
+          - **macOS:** `.tar.gz` archive with the same contents for the macOS runner architecture.
+          - **Windows x86-64 (MinGW-w64 UCRT64):** `.zip` archive with `install.ps1`, public header, static library, DLL/import library, documentation, and quickstart example.
+          - Each archive has a matching `.sha256` checksum file.
+
+          See `INSTALL.md` inside each archive for installation and linking instructions. The package release version and C ABI version are recorded separately in `BUILD-INFO.txt`.
+          NOTES
+
+      - name: Publish Release and attach packages to Assets
         uses: softprops/action-gh-release@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          prerelease: true
-          make_latest: false
-          generate_release_notes: true
+          name: cdin-kernel ${{ github.ref_name }}
+          body_path: release-notes.md
           files: release-assets/*
+          prerelease: ${{ contains(github.ref_name, '-alpha.') || contains(github.ref_name, '-beta.') || contains(github.ref_name, '-rc.') }}
+          make_latest: ${{ !contains(github.ref_name, '-') }}
