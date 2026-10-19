@@ -1,0 +1,79 @@
+name: Large-document benchmarks
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'include/**'
+      - 'bench/**'
+      - 'Makefile'
+      - '.github/workflows/benchmark.yml'
+  push:
+    branches: [main, master]
+    paths:
+      - 'src/**'
+      - 'include/**'
+      - 'bench/**'
+      - 'Makefile'
+      - '.github/workflows/benchmark.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: benchmark-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  benchmark:
+    name: Benchmark ${{ matrix.size_mib }} MiB document
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        size_mib: [125, 500, 1024]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build benchmark
+        run: make build/bench-scale
+      - name: Run benchmark
+        id: run
+        shell: bash
+        env:
+          SIZE_MIB: ${{ matrix.size_mib }}
+        run: |
+          set -euo pipefail
+          mkdir -p benchmark-results
+          echo 'size_mib,kernel_create_s,document_load_s,line_count_s,search_no_match_s,snapshot_s,load_mib_per_s,line_count' > "benchmark-results/${SIZE_MIB}MiB.csv"
+          ./build/bench-scale "$SIZE_MIB" | tee -a "benchmark-results/${SIZE_MIB}MiB.csv"
+          tail -n 1 "benchmark-results/${SIZE_MIB}MiB.csv" >> "$GITHUB_OUTPUT"
+      - name: Add results to workflow summary
+        if: always()
+        shell: bash
+        env:
+          SIZE_MIB: ${{ matrix.size_mib }}
+        run: |
+          {
+            echo "## cdin-kernel benchmark — ${SIZE_MIB} MiB"
+            echo
+            echo '| Size (MiB) | Kernel create (s) | Load (s) | Line count (s) | Search no-match (s) | Snapshot (s) | Load throughput (MiB/s) | Lines |'
+            echo '|---:|---:|---:|---:|---:|---:|---:|---:|'
+            if [[ -f "benchmark-results/${SIZE_MIB}MiB.csv" ]]; then
+              tail -n 1 "benchmark-results/${SIZE_MIB}MiB.csv" | awk -F, '{printf "| %s | %s | %s | %s | %s | %s | %s | %s |\n", $1,$2,$3,$4,$5,$6,$7,$8}'
+            else
+              echo "| ${SIZE_MIB} | benchmark failed | — | — | — | — | — | — |"
+            fi
+            echo
+            echo '_GitHub-hosted ubuntu-24.04 runner; one run, no CPU pinning. Treat timings as indicative, not a cross-machine performance guarantee._'
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload CSV result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-${{ matrix.size_mib }}MiB
+          path: benchmark-results/*.csv
+          if-no-files-found: ignore
+          retention-days: 30

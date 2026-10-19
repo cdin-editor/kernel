@@ -19,12 +19,18 @@ jobs:
       matrix:
         include:
           - id: linux-x64
-            os: ubuntu-latest
+            os: ubuntu-24.04
             cc: gcc
-          - id: macos
-            os: macos-latest
+          - id: linux-arm64
+            os: ubuntu-24.04-arm
+            cc: gcc
+          - id: macos-arm64
+            os: macos-15
             cc: clang
-          - id: windows-ucrt64
+          - id: macos-x64
+            os: macos-15-intel
+            cc: clang
+          - id: windows-x64-ucrt64
             os: windows-latest
             cc: gcc
 
@@ -156,8 +162,8 @@ jobs:
           find release-assets -maxdepth 1 -type f -print
           package_count="$(find release-assets -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.zip' \) | wc -l)"
           checksum_count="$(find release-assets -maxdepth 1 -type f -name '*.sha256' | wc -l)"
-          test "$package_count" -eq 3
-          test "$checksum_count" -eq 3
+          test "$package_count" -eq 5
+          test "$checksum_count" -eq 5
 
       - name: Prepare release notes from CHANGELOG.md
         shell: bash
@@ -192,8 +198,8 @@ jobs:
 
           ## Downloadable assets
 
-          - **Linux x86-64:** `.tar.gz` archive with `install.sh`, public header, static/shared libraries, pkg-config metadata, documentation, and quickstart example.
-          - **macOS:** `.tar.gz` archive with the same contents for the macOS runner architecture.
+          - **Linux x86-64 and ARM64:** `.tar.gz` archives with `install.sh`, public header, static/shared libraries, pkg-config metadata, documentation, and quickstart example.
+          - **macOS x86-64 and ARM64:** `.tar.gz` archives with the same contents for each architecture.
           - **Windows x86-64 (MinGW-w64 UCRT64):** `.zip` archive with `install.ps1`, public header, static library, DLL/import library, documentation, and quickstart example.
           - Each archive has a matching `.sha256` checksum file.
 

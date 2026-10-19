@@ -13,9 +13,18 @@ make check         # conformance vectors + C regression tests
 make shared        # build a shared library for FFI consumers
 make install       # install header + static/shared library + pkg-config file
 make ffi-shared    # build the optional, small-ABI FFI example bridge
+make bench-scale SIZE_MIB=125  # benchmark 125 MiB, 500 MiB, or 1024 MiB documents
 ```
 
 The core public API is defined by the single public header: [`include/cdin/kernel.h`](include/cdin/kernel.h). The bridge in `examples/ffi/` is for examples and is **not** part of the stable kernel ABI.
+
+## Large-document benchmark
+
+Run a single local measurement with `make bench-scale SIZE_MIB=125`, `500`, or `1024` (1 GiB). The benchmark measures kernel creation, document load, line-count/index construction, a literal no-match search, snapshot acquisition, and document-load throughput. It prints one CSV row so it can be collected by CI.
+
+The GitHub Actions workflow [Large-document benchmarks](.github/workflows/benchmark.yml) runs all three sizes on an Ubuntu 24.04 hosted runner, writes a table to the Actions run summary, and uploads per-size CSV artifacts. The measurements are indicative: runner load, CPU model, and memory pressure affect results, so compare runs on the same runner class and do not treat one run as a universal performance guarantee. The 1 GiB case needs several GiB of available RAM.
+
+Release packages are built and tested on Linux x86-64/ARM64, macOS x86-64/ARM64, and Windows x86-64 (MinGW-w64 UCRT64).
 
 ## Documentation
 

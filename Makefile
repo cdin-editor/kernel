@@ -38,6 +38,7 @@ LIB    = $(BUILD)/libcdin_kernel.a
 RUNNER = $(BUILD)/conformance-runner
 TESTS  = $(BUILD)/test_p1 $(BUILD)/test_p3_conc
 BENCH  = $(BUILD)/bench
+BENCH_SCALE = $(BUILD)/bench-scale
 FUZZ   = $(BUILD)/fuzz_ops
 SH_OBJ = $(BUILD)/shared_obj
 FFI_OBJ = $(BUILD)/ffi_obj
@@ -108,7 +109,7 @@ endif
 
 $(shell $(MKDIR))
 
-.PHONY: all shared ffi-shared quickstart check check-vectors check-tests vectors asan tsan fuzz-build bench clean trace tests install uninstall
+.PHONY: all shared ffi-shared quickstart check check-vectors check-tests vectors asan tsan fuzz-build bench bench-scale clean trace tests install uninstall
 
 all: $(LIB)
 
@@ -252,6 +253,14 @@ support/strict_alloc.o: support/strict_alloc.c
 $(BENCH): bench/bench.c $(LIB) support/strict_alloc.o
 	$(CC) $(CFLAGS) $(LDFLAGS) bench/bench.c support/strict_alloc.o -I. \
 	    $(LIB) -o $@
+
+$(BENCH_SCALE): bench/bench_scale.c $(LIB)
+	$(CC) $(CFLAGS) $(LDFLAGS) bench/bench_scale.c -Iinclude $(LIB) $(LDLIBS) -o $@
+
+# Large-document benchmark; examples: make bench-scale SIZE_MIB=125 (or 500 / 1024)
+SIZE_MIB ?= 125
+bench-scale: $(BENCH_SCALE)
+	$(BENCH_SCALE) $(SIZE_MIB)
 
 # Regenerate the requirement -> vector -> result table from the vectors.
 trace: $(RUNNER)
