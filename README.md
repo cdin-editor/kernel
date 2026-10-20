@@ -64,11 +64,11 @@ The published Windows package targets MinGW-w64 UCRT64; MSVC compatibility is no
 
 ### GNU/Linux with Docker
 
-A multi-architecture SDK image is published to Docker Hub for `linux/amd64` and `linux/arm64`. Replace `<dockerhub-user>` with the account that publishes the image:
+A multi-architecture SDK image is published to Docker Hub for `linux/amd64` and `linux/arm64`. Replace `bitsgenix` with the account that publishes the image:
 
 ```sh
-docker pull <dockerhub-user>/cdin-kernel:latest
-docker run --rm -it -v "$PWD:/workspace" <dockerhub-user>/cdin-kernel:latest
+docker pull bitsgenix/cdin-kernel:latest
+docker run --rm -it -v "$PWD:/workspace" bitsgenix/cdin-kernel:latest
 ```
 
 The image includes the public header, static/shared libraries, GCC, Make, and `pkg-config`. Use it as a build environment for applications that link against `cdin-kernel`; it is not an application image. See [Docker usage](docs/installation.md#docker-sdk-image).

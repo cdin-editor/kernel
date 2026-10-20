@@ -102,11 +102,11 @@ For Windows, extract the `.zip`, open PowerShell in the extracted directory, and
 
 The Docker image is a development SDK for applications that need to compile and link against `cdin-kernel`. It contains the installed public header, static and shared libraries, GCC, Make, and `pkg-config`. It is published for `linux/amd64` and `linux/arm64`; it is not intended to be the final runtime image for an application.
 
-Replace `<dockerhub-user>` with the Docker Hub account used by this project:
+Replace `bitsgenix` with the Docker Hub account used by this project:
 
 ```sh
-docker pull <dockerhub-user>/cdin-kernel:latest
-docker run --rm -it -v "$PWD:/workspace" <dockerhub-user>/cdin-kernel:latest
+docker pull bitsgenix/cdin-kernel:latest
+docker run --rm -it -v "$PWD:/workspace" bitsgenix/cdin-kernel:latest
 ```
 
 Inside the container, compile a consumer using the installed metadata:
