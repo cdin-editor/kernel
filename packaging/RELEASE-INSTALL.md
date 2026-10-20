@@ -54,7 +54,7 @@ compatibility is not promised by this release.
 ## Consumer projects
 
 Use `include/cdin/kernel.h` and link either `libcdin_kernel.a` (static) or the
-platform's shared-library import/runtime files. This is an initial development
-release: the public API/ABI is still draft, so pin the package version and
-rebuild bindings when updating it. Verify SHA-256 against the adjacent `.sha256`
-file before installing.
+platform's shared-library import/runtime files. This release provides the stable C ABI `1.0.0`. Compile consumers against the
+matching `include/cdin/kernel.h`, query the loaded ABI version at startup, and
+review the compatibility rules before updating bindings. Verify SHA-256 against
+the adjacent `.sha256` file before installing.

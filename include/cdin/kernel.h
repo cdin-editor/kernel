@@ -1,5 +1,5 @@
 /*
- * cdin-kernel: generic text engine, C ABI (draft 0.2.0).
+ * cdin-kernel: generic text engine, C ABI 1.0.0.
  *
  * The ONLY public header. Rules (spec: ABI-001..ABI-022):
  *  - every function returns cdin_status; results go through out-parameters;
@@ -38,12 +38,17 @@ extern "C" {
 #  define CDIN_API
 #endif
 
-#define CDIN_KERNEL_ABI_MAJOR 0u
-#define CDIN_KERNEL_ABI_MINOR 2u
+#define CDIN_KERNEL_ABI_MAJOR 1u
+#define CDIN_KERNEL_ABI_MINOR 0u
 #define CDIN_KERNEL_ABI_PATCH 0u
+#define CDIN_KERNEL_SPEC_VERSION_MAJOR 1u
+#define CDIN_KERNEL_SPEC_VERSION_MINOR 0u
+#define CDIN_KERNEL_SPEC_VERSION_PATCH 0u
 
-/* ---- status (ERR-001..ERR-012). Numeric values are frozen once released. -- */
-typedef enum cdin_status {
+/* Public enum-like ABI values use uint32_t, not C enum types whose width is
+ * implementation-defined. Numeric values are frozen for ABI major 1. */
+typedef uint32_t cdin_status;
+enum {
     CDIN_OK = 0,
     CDIN_INVALID_ARGUMENT,
     CDIN_INVALID_HANDLE,
@@ -61,7 +66,7 @@ typedef enum cdin_status {
     CDIN_BUFFER_TOO_SMALL,
     CDIN_VERSION_MISMATCH,
     CDIN_INTERNAL
-} cdin_status;
+};
 
 /* Static, UTF-8, NUL-terminated name such as "CDIN_STALE_VERSION". */
 CDIN_API const char *cdin_status_name(cdin_status s);
@@ -124,13 +129,17 @@ enum {
     CDIN_LIMIT_SNAPSHOTS = 6,
     CDIN_LIMIT_SUBSCRIBERS = 7,
     CDIN_LIMIT_SEARCH_STEPS = 8,
-    CDIN_LIMIT_TXN_MEMORY = 9
+    CDIN_LIMIT_TXN_MEMORY = 9,
+    CDIN_LIMIT_BATCH_EDITS = 10,
+    CDIN_LIMIT_VERSION = 11,
+    CDIN_LIMIT_SEQUENCE = 12
 };
 
 /* Defaults used when a limit is 0 (docs/limits-and-status.md). */
 #define CDIN_DEFAULT_MAX_DOCUMENTS        1024u
 #define CDIN_DEFAULT_MAX_DOCUMENT_SIZE    ((uint64_t)1 << 30)
 #define CDIN_DEFAULT_MAX_UNDO_MEMORY      ((uint64_t)64 << 20)
+#define CDIN_MAX_BATCH_EDITS_HARD         65536u
 #define CDIN_DEFAULT_MAX_BLOB_SIZE        4096u
 #define CDIN_DEFAULT_MAX_SNAPSHOTS        16u
 #define CDIN_DEFAULT_MAX_SUBSCRIBERS      16u
@@ -176,10 +185,10 @@ typedef struct cdin_error_details {
 #define CDIN_FEAT_SEARCH_REGEX   (1ull << 6)   /* NOT set in this release */
 #define CDIN_FEAT_GRAPHEME       (1ull << 7)
 #define CDIN_FEAT_CASEFOLD_SIMPLE (1ull << 8)
-#define CDIN_FEAT_LOCKING        (1ull << 9)   /* reserved here; cdin_features() currently never sets it */
+#define CDIN_FEAT_LOCKING        (1ull << 9)   /* caller-provided lock vtable is supported */
 
 CDIN_API cdin_status cdin_abi_version(uint32_t *major, uint32_t *minor, uint32_t *patch);
-/* Static feature set of this build (CDIN_FEAT_LOCKING is never set here). */
+/* Static feature set of this build, independent of per-kernel lock configuration. */
 CDIN_API cdin_status cdin_features(uint64_t *mask);
 /* Pinned Unicode version of this release (POS-032). */
 CDIN_API cdin_status cdin_unicode_version(uint32_t *major, uint32_t *minor, uint32_t *patch);
@@ -190,16 +199,17 @@ CDIN_API cdin_status cdin_kernel_create(const cdin_kernel_config *cfg, cdin_kern
  * Leaked snapshots are reported through the log sink (CONC-022). */
 CDIN_API cdin_status cdin_kernel_destroy(cdin_kernel *k);
 
-typedef enum cdin_shutdown_mode {
+typedef uint32_t cdin_shutdown_mode;
+enum {
     CDIN_SHUTDOWN_GRACEFUL = 0,
     CDIN_SHUTDOWN_ABORT = 1
-} cdin_shutdown_mode;
+};
 
 /* Stops accepting content mutations and aborts active transactions. Documents
  * remain readable and may be closed; snapshot reads/release and notification
- * drain/unsubscribe remain available. Destroy reclaims remaining state.
- * Calls run inline under the kernel lock, so no accepted request is pending:
- * both modes behave identically today (see docs/limits-and-status.md). */
+ * drain/unsubscribe remain available. Calls are synchronous, so no accepted
+ * request remains queued: both modes have identical ABI 1.0.0 behavior.
+ * Destroy reclaims remaining state. */
 CDIN_API cdin_status cdin_kernel_shutdown(cdin_kernel *k, cdin_shutdown_mode mode);
 
 /* Sequence number of the last accepted mutation (CONC-004). */
@@ -381,7 +391,8 @@ CDIN_API cdin_status cdin_text_grapheme_next(cdin_kernel *k, cdin_source src, ui
 CDIN_API cdin_status cdin_text_grapheme_prev(cdin_kernel *k, cdin_source src, uint64_t offset, uint64_t *out);
 
 /* ---- notifications (NOTIF-*) ---------------------------------------------- */
-typedef enum cdin_notif_kind {
+typedef uint32_t cdin_notif_kind;
+enum {
     CDIN_NOTIF_EDIT = 0,
     CDIN_NOTIF_BATCH,
     CDIN_NOTIF_TRANSACTION,
@@ -392,7 +403,7 @@ typedef enum cdin_notif_kind {
     CDIN_NOTIF_HISTORY_EVICTED,
     CDIN_NOTIF_RESYNC,
     CDIN_NOTIF_SAVED_STATE_CHANGED
-} cdin_notif_kind;
+};
 
 #define CDIN_NOTIF_MAX_EDITS 8u
 
@@ -436,16 +447,18 @@ CDIN_API cdin_status cdin_notif_drain(cdin_kernel *k, cdin_notif n, cdin_notif_e
                                       size_t max, size_t *out_count);
 
 /* ---- search (SEARCH-*) ----------------------------------------------------- */
-typedef enum cdin_search_mode {
+typedef uint32_t cdin_search_mode;
+enum {
     CDIN_SEARCH_LITERAL = 0,  /* pattern is UTF-8 text; matches lie in valid regions */
     CDIN_SEARCH_REGEX = 1,    /* not available in this release: UNSUPPORTED */
     CDIN_SEARCH_BYTES = 2     /* byte-exact, anywhere */
-} cdin_search_mode;
+};
 
-typedef enum cdin_search_direction {
+typedef uint32_t cdin_search_direction;
+enum {
     CDIN_SEARCH_FORWARD = 0,
     CDIN_SEARCH_BACKWARD = 1
-} cdin_search_direction;
+};
 
 #define CDIN_SEARCH_CASE_INSENSITIVE 1u   /* simple Unicode case folding (literal mode) */
 #define CDIN_SEARCH_ANY_NEWLINE      2u   /* LF in the pattern matches LF, CRLF or CR (SEARCH-032) */

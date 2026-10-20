@@ -125,27 +125,21 @@ cdin_status notif_subscribe_locked(cdin_kernel *k, cdin_doc dh, const cdin_subsc
     return CDIN_OK;
 }
 
-/* NOTIF-010: pending events are discarded and the subscriber is detached, but
- * the handle stays valid (drain returns an empty queue) until the kernel is
- * destroyed; doc_closed doubles as the "detached" flag (no member needs to see
- * two states: neither CLOSED events nor further edits reach it). The ring is
- * freed here — the queue can never fill again — so churn costs one subscriber
- * shell, not one ring, per unsubscribe. */
+/* Unsubscribe ends ownership of the subscription: discard queued events,
+ * invalidate the generation-tagged handle, and release the shell as well as
+ * the ring. Keeping detached shells forever made subscribe/unsubscribe churn
+ * consume unbounded memory over a long-lived kernel. A closed document is
+ * different: its CLOSED event remains drainable until the caller unsubscribes. */
 cdin_status notif_unsubscribe_locked(cdin_kernel *k, cdin_notif nh)
 {
-    subscriber *s;
-    s = pool_get(&k->subs, nh);
+    subscriber *s = pool_remove(&k->subs, nh);
     if (!s) return CDIN_INVALID_HANDLE;
     if (!s->doc_closed) {
         doc *d = pool_get(&k->docs, s->doc);
         if (d && d->nsubs) d->nsubs--;
     }
-    s->doc_closed = 1;
-    s->head = 0;
-    s->count = 0;
-    k_free(k, s->ring, s->cap * sizeof *s->ring);   /* shortcut: a re-subscribed doc gets a NEW handle anyway */
-    s->ring = NULL;
-    s->cap = 0;
+    k_free(k, s->ring, s->cap * sizeof *s->ring);
+    k_free(k, s, sizeof *s);
     return CDIN_OK;
 }
 

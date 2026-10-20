@@ -214,7 +214,7 @@ Read the comments on `cdin_search_request` and `cdin_search_result` in the publi
 
 ## 11. Notifications
 
-Subscribe to changes with `cdin_notif_subscribe`. It returns a notification handle and the version at which the subscription starts. Mutations enqueue bounded events; `cdin_notif_drain` copies up to `max` events into a caller-supplied array. `cdin_notif_unsubscribe` discards pending events and detaches the subscription; the handle remains valid until kernel destruction, and later drains return an empty queue.
+Subscribe to changes with `cdin_notif_subscribe`. It returns a notification handle and the version at which the subscription starts. Mutations enqueue bounded events; `cdin_notif_drain` copies up to `max` events into a caller-supplied array. `cdin_notif_unsubscribe` discards pending events, invalidates the handle and frees the subscription state. A later drain/unsubscribe returns `CDIN_INVALID_HANDLE`. If the document closes, its final `CDIN_NOTIF_CLOSED` event can be drained before you unsubscribe.
 
 Notification queues never block edits. If a queue overflows, it collapses to a `CDIN_NOTIF_RESYNC` event; treat this as “incremental event history is no longer complete” and re-read the latest document version rather than trying to replay missed edits. If `edits_truncated` is set, only the stored first entries are present; do not replay them as if they described the full change.
 

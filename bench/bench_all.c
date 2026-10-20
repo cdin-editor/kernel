@@ -24,6 +24,7 @@ int main(int argc, char **argv) {
     cdin_kernel_config cfg;
     memset(&cfg, 0, sizeof(cfg));
     cfg.struct_size = sizeof(cfg);
+    cfg.abi_major = CDIN_KERNEL_ABI_MAJOR;
     cfg.allocator = alloc;
     cfg.max_documents = 64;
     cfg.max_document_size = size + 1024;

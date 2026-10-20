@@ -25,7 +25,7 @@ int main(int argc, char **argv) {
     for (size_t i = 0; i < n; ++i) data[i] = (uint8_t)line[i % (sizeof(line) - 1)];
 
     cdin_allocator a = { sizeof(cdin_allocator), b_alloc, b_realloc, b_free, NULL };
-    cdin_kernel_config cfg; memset(&cfg, 0, sizeof cfg); cfg.struct_size = sizeof cfg; cfg.allocator = a;
+    cdin_kernel_config cfg; memset(&cfg, 0, sizeof cfg); cfg.struct_size = sizeof cfg; cfg.abi_major = CDIN_KERNEL_ABI_MAJOR; cfg.allocator = a;
     cfg.max_documents = 2; cfg.max_document_size = (uint64_t)n + 4096; cfg.max_undo_memory = 16u * 1024u * 1024u;
     cdin_kernel *k = NULL; double t0 = now_s();
     cdin_status st = cdin_kernel_create(&cfg, &k);

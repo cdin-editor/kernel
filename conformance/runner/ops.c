@@ -101,6 +101,7 @@ static int op_create(opin *in)
     cdin_kernel_config cfg;
     memset(&cfg, 0, sizeof(cfg));
     cfg.struct_size = sizeof(cfg);
+    cfg.abi_major = CDIN_KERNEL_ABI_MAJOR;
     cfg.allocator = alloc_vtable(ctx);
     cfg.max_documents = max_docs;
     cfg.max_document_size = max_doc;

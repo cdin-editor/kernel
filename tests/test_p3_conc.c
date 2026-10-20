@@ -180,6 +180,7 @@ static cdin_status host_kernel(host *h, cdin_kernel **out,
     cdin_kernel_config cfg;
     memset(&cfg, 0, sizeof(cfg));
     cfg.struct_size = sizeof(cfg);
+    cfg.abi_major = CDIN_KERNEL_ABI_MAJOR;
     cfg.allocator = alloc_vtable(h->alloc);
     cfg.max_documents = max_docs;
     cfg.max_document_size = max_doc_size;
@@ -312,9 +313,8 @@ static void w_snapshot_read(void *arg)
     }
 }
 
-/* NOTIF-010: after unsubscribe the subscriber is still drainable. A
- * concurrent writer may add events between unsubscribe and drain, so the
- * count is not checked here — only that the call succeeds. */
+/* Unsubscribe invalidates the generation-tagged handle. In a race with a
+ * writer, only the documented stale-handle status is allowed after removal. */
 static void w_subscriber(void *arg)
 {
     worker *w = (worker *)arg;
@@ -334,7 +334,7 @@ static void w_subscriber(void *arg)
         }
         if (cdin_notif_drain(w->k, nf, ev, 32, &n) != CDIN_OK) w->bad_status = 1;
         if (cdin_notif_unsubscribe(w->k, nf) != CDIN_OK) w->bad_status = 1;
-        if (cdin_notif_drain(w->k, nf, ev, 32, &n) != CDIN_OK) w->bad_status = 1;
+        if (cdin_notif_drain(w->k, nf, ev, 32, &n) != CDIN_INVALID_HANDLE) w->bad_status = 1;
     }
 }
 

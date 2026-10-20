@@ -80,7 +80,7 @@ The public header is a contract, not just a compiler interface. Before changing 
 - Check all callers in `tests/`, `conformance/runner/`, `bench/`, and `examples/`.
 - Never silently reinterpret a reserved nonzero flag; reject it until its behavior is fully implemented and tested.
 
-The project is draft ABI `0.2.0`. Do not claim cross-version binary stability before the project explicitly declares a stable major contract.
+The ABI 1.0.0 contract is stable. Changes to major-version layouts, widths, constant meanings or prototypes are breaking; additive evolution must follow the documented compatibility rules and conformance tests.
 
 ## Threading and callbacks
 

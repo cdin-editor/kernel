@@ -1,6 +1,6 @@
 # Language bindings: Python, Go, JavaScript, and TypeScript
 
-The kernel's supported public boundary is a **native C ABI** described by [`include/cdin/kernel.h`](../include/cdin/kernel.h). The ABI is currently draft (`0.2.0`); ship the library, matching header, and bindings as one versioned unit. The examples below use the small bridge in `examples/ffi/` because it hides the allocator callback and the nested configuration structs. That bridge is sample code, **not part of the public kernel ABI**.
+The kernel's supported public boundary is a **native C ABI** described by [`include/cdin/kernel.h`](../include/cdin/kernel.h). The ABI is stable at `1.0.0`; ship the library, matching header, and bindings as one versioned unit, and query `cdin_abi_version` on startup. The examples below use the small bridge in `examples/ffi/` because it hides the allocator callback and the nested configuration structs. That bridge is sample code, **not part of the public kernel ABI**.
 
 ## Choose your integration
 

@@ -160,6 +160,7 @@ cdin_status doc_reload_locked(cdin_kernel *k, doc *d, const cdin_reload_request 
 cdin_status doc_mark_clean_locked(cdin_kernel *k, doc *d, wake_list *wl)
 {
     int was = doc_is_clean(d);
+    if (k->seq == UINT64_MAX) return CDIN_LIMIT_EXCEEDED;
     k->seq++;
     d->marker_id = d->head ? d->units[d->head - 1].id : 0;
     d->marker_lost = 0;

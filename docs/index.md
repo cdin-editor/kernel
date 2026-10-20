@@ -19,4 +19,4 @@ This site/document set describes the behavior implemented in this repository. Wh
 - **Current limitation** means callers should not expect the feature to work just because a type, enum, or reserved flag exists.
 - **Example bridge** means code in `examples/ffi/` intended to teach integration; it is not a second official ABI and must be rebuilt together with the core.
 
-Project status is draft and the reported ABI version is `0.2.0`. Review the compatibility section in [ABI reference](abi.md) before shipping a binding as a binary dependency.
+Project status is stable for C ABI `1.0.0`, synchronized with CDIN Spec `1.0.0`. Review the compatibility section in [ABI reference](abi.md) and use the exact shipped header before releasing bindings.

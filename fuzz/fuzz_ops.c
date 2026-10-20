@@ -20,7 +20,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     cdin_doc docs[3] = { 0, 0, 0 }; cdin_txn txns[2] = { 0, 0 }; cdin_snapshot snaps[3] = { 0, 0, 0 }; cdin_notif notifs[2] = { 0, 0 };
     int fail_mode = (int)u8(&r);
     strict_init(&al);
-    memset(&c, 0, sizeof c); c.struct_size = sizeof c; c.allocator = strict_vtable(&al);
+    memset(&c, 0, sizeof c); c.struct_size = sizeof c; c.abi_major = CDIN_KERNEL_ABI_MAJOR; c.allocator = strict_vtable(&al);
     c.max_undo_memory = 200 + u16(&r) % 2000; c.max_document_size = 1 << 16; c.notif_queue_capacity = 4 + u8(&r) % 8; c.max_snapshots_per_doc = 2;
     c.max_blob_size = 16; c.default_search_steps = 5000; c.max_documents = 3; c.max_subscribers_per_doc = 2;
     if (cdin_kernel_create(&c, &k) != CDIN_OK) return 0;

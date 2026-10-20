@@ -137,6 +137,7 @@ cdin_status kernel_ensure(uint64_t max_documents, uint64_t max_document_size,
     cdin_kernel_config cfg;
     memset(&cfg, 0, sizeof(cfg));
     cfg.struct_size = sizeof(cfg);
+    cfg.abi_major = CDIN_KERNEL_ABI_MAJOR;
     cfg.allocator = alloc_vtable(ctx);
     cfg.max_documents = max_documents;
     cfg.max_document_size = max_document_size;
@@ -164,7 +165,7 @@ void out_begin(void)
 
 int out_untouched(const char *what, const char *path, int line)
 {
-    /* draft 0.2.0: on failure the kernel may fill `details` and nothing else.
+    /* ABI 1.0.0: on failure the kernel may fill `details` and nothing else.
      * Mask it in both copies, otherwise every detail write looks like a wild
      * out-parameter write. */
     vec_out cur = g_out, snap = g_out_snapshot;

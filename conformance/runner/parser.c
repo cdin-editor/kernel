@@ -60,11 +60,13 @@ const char *notif_kind_name(int kind)
 
 static void syntax(vec_ctx *ctx, const char *what, const char *detail)
 {
-    if (detail)
-        fprintf(stderr, "%s:%d: syntax error: %s '%s'\n", ctx->path, ctx->line, what, detail);
-    else
-        fprintf(stderr, "%s:%d: syntax error: %s\n", ctx->path, ctx->line, what);
-    (*ctx->errors)++;
+    if (ctx->path) {
+        if (detail)
+            fprintf(stderr, "%s:%d: syntax error: %s '%s'\n", ctx->path, ctx->line, what, detail);
+        else
+            fprintf(stderr, "%s:%d: syntax error: %s\n", ctx->path, ctx->line, what);
+    }
+    if (ctx->errors) (*ctx->errors)++;
 }
 
 int vec_parse_args(const char *p, vec_arg *args, size_t *count, vec_ctx *ctx)

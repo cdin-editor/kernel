@@ -2,7 +2,7 @@ name: Build, test, and publish release
 
 on:
   push:
-    # Stable releases (v0.1.0) and prereleases (v0.2.0-alpha.1, etc.).
+    # Stable release tags follow the ABI/package version (v1.0.0); prereleases use semver suffixes (for example v1.1.0-alpha.1).
     tags:
       - 'v*'
   workflow_dispatch:

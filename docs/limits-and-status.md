@@ -17,8 +17,9 @@ Each zero-valued limit in `cdin_kernel_config` selects the default shown here.
 | `max_subscribers_per_doc` | 16 | Per-document subscriptions; hard implementation cap is 64. |
 | `notif_queue_capacity` | 64 events | Bounded ring per subscriber, clamped to 4–65,536. |
 | `default_search_steps` | 4,294,967,296 | Candidate start positions; used when a search's `step_limit` is zero. |
+| `CDIN_MAX_BATCH_EDITS_HARD` | 65,536 | Absolute batch edit count ceiling; exceeding it reports `CDIN_LIMIT_BATCH_EDITS`. |
 
-The header also defines `CDIN_LIMIT_TXN_MEMORY`, but the current config has no separate transaction-memory field. Do not advertise it as a configurable budget.
+`CDIN_LIMIT_TXN_MEMORY` is a limit identifier, not a separate configuration field. Active transaction logging and retained history share the `max_undo_memory` per-document budget.
 
 If an operation returns `CDIN_LIMIT_EXCEEDED`, inspect the returned `details.limit_id` when the result type exposes it. Reduce the operation or set the relevant config field to an appropriate nonzero value. A value of zero selects the default; it is not a way to disable a resource.
 
@@ -44,7 +45,7 @@ If an operation returns `CDIN_LIMIT_EXCEEDED`, inspect the returned `details.lim
 | Any-newline literal search | Supported | LF in the pattern may match LF, CRLF, or CR. |
 | Regex search | **Not supported** | `CDIN_SEARCH_REGEX` returns `CDIN_UNSUPPORTED`; feature bit is not advertised. |
 | Reload while keeping history | **Not supported** | `CDIN_RELOAD_KEEP_HISTORY` returns `CDIN_UNSUPPORTED`; pass flags `0`. |
-| Lock-vtable feature reporting | Partial | Lock callbacks are supported by the implementation, but `CDIN_FEAT_LOCKING` is not returned by `cdin_features`. Inspect your own config instead. |
+| Lock-vtable feature reporting | Supported | `CDIN_FEAT_LOCKING` is advertised; a configured lock/unlock pair serializes API calls. Without it, callers must serialize calls themselves. |
 | Graceful vs abort shutdown | Same behavior today | No accepted mutation requests wait in an internal queue, so the modes behave identically. |
 
 ## Status-to-action table
@@ -74,5 +75,8 @@ If an operation returns `CDIN_LIMIT_EXCEEDED`, inspect the returned `details.lim
 - A document read can begin/end within a multibyte sequence; check read flags if that matters to your UI. Position-sensitive mutations must use valid positions.
 - Search `ranges_capacity` is a count of **matches/pairs**, not a count of `uint64_t` cells. Allocate at least `2 * ranges_capacity` cells.
 - Notification overflow is represented by `CDIN_NOTIF_RESYNC`. Incremental edit replay is no longer sufficient after that event.
-- A subscription handle remains allocated as a detached handle after unsubscribe until kernel destruction; do not create/unsubscribe unbounded subscriptions without destroying the owning kernel periodically.
+- `cdin_notif_unsubscribe` invalidates and frees the subscription handle. A later drain/unsubscribe returns `CDIN_INVALID_HANDLE`; a closed document may emit one final `CDIN_NOTIF_CLOSED` event that remains drainable until the caller unsubscribes.
 - If snapshots are not released, they count against the configured snapshot cap and can retain old text blocks in memory.
+
+
+ABI 1.0.0 also guards version and accepted-sequence exhaustion: the kernel does not wrap a document version into `CDIN_ANY_VERSION` or wrap its sequence counter. It returns `CDIN_LIMIT_EXCEEDED` with `CDIN_LIMIT_VERSION` or `CDIN_LIMIT_SEQUENCE`. The batch ceiling is reported with `CDIN_LIMIT_BATCH_EDITS`.

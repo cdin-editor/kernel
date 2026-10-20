@@ -5,6 +5,20 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] - 2026-10-20
+
+Stable C ABI 1.0.0 release, synchronized with the CDIN Spec 1.0.0 architecture baseline.
+
+- Freeze the public ABI major at `1` and publish explicit Spec version `1.0.0` macros.
+- Use fixed-width `uint32_t` types for public enum-like fields so ABI layouts do not depend on a compiler's enum size.
+- Advertise the caller-provided locking feature and document exact optional service-vtable validation.
+- Reject document-version, sequence, batch-count and checked-size overflows rather than wrapping or proceeding with incomplete accounting.
+- Invalidate and free notification subscriptions on unsubscribe; stale subscription handles now return `CDIN_INVALID_HANDLE`.
+- Fix the test target so it runs P1 and P3 as separate processes; update stale tests to match the transaction-read, error-details, accepted-sequence and history-blob contracts. Add a 2,000-cycle subscription-churn regression.
+- Repair and build all current fuzz targets against the ABI 1.0.0 surface; align conformance fixtures and tools with the stable API.
+- Reconcile ABI, concurrency, limits, notifications and user-guide documentation with the implementation.
+- Verified locally with Clang: normal/conformance checks, shared and FFI builds, quickstart, ASan/UBSan, TSan, and 200-run smoke tests for each of four fuzz targets. See the supplied release sync report for exact commands and environmental limits.
+
 ## [0.1.0] - 2026-10-20
 
 ### Added

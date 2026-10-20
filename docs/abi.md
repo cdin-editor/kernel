@@ -2,7 +2,7 @@
 
 The public C ABI is declared in [`include/cdin/kernel.h`](../include/cdin/kernel.h), the only public header. This page explains the rules shared by functions and gives a directory of the exported surface; the header is the final authority for exact field order, C types, constants, and function prototypes.
 
-**Reported ABI version:** `0.2.0` (`CDIN_KERNEL_ABI_MAJOR/MINOR/PATCH`). The project is still marked draft. Bindings should compile against the exact header that ships with the library and query the loaded library version at startup.
+**Reported ABI version:** `1.0.0` (`CDIN_KERNEL_ABI_MAJOR/MINOR/PATCH`), synchronized with CDIN Spec `1.0.0`. ABI major 1 is stable. The exact public layout and numeric values are defined by `include/cdin/kernel.h`; bindings should compile against that header and query the loaded library version at startup.
 
 ## 1. ABI fundamentals
 
@@ -27,7 +27,7 @@ Common patterns:
 - `cdin_features(&mask)` returns the compile-time feature mask.
 - `cdin_unicode_version(&major, &minor, &patch)` returns the Unicode data version.
 
-The current feature mask advertises batch edits, transactions, snapshots, notifications, literal search, byte search, grapheme stepping, and simple case folding. Regex is not advertised. `CDIN_FEAT_LOCKING` is defined in the header but is not included in the current feature-mask result, even if a caller configures a lock vtable; do not use that bit as a runtime lock probe.
+The feature mask for ABI 1.0.0 advertises batch edits, transactions, snapshots, notifications, literal search, byte search, grapheme stepping, simple case folding, and the caller-provided locking interface. Regex is not advertised. `CDIN_FEAT_LOCKING` means the build supports an optional caller-provided lock vtable; if no lock/unlock pair is configured, callers must serialize all calls on that kernel themselves.
 
 ## 2. Status codes
 
@@ -85,7 +85,7 @@ The callbacks and `ctx` must remain valid until `cdin_kernel_destroy` finishes. 
 
 ### `struct_size`
 
-Every request/configuration struct passed into the kernel starts with `struct_size`. Set it to `sizeof(the_struct)` for the header being compiled against. The code accepts a declared struct size at least as large as the known struct only when any unknown trailing bytes are zero. Do not fabricate a larger size without allocating and zeroing that entire declared range.
+Every request/configuration struct passed into the kernel starts with `struct_size`. Set it to `sizeof(the_struct)` for the header being compiled against. For ABI 1.0 input request and result structures, the declared size must be at least the full known structure size; any unknown trailing bytes are checked and must be zero. This permits forward-compatible zero extension, not smaller v1 structs. Nested by-value allocator/lock/log vtables in `cdin_kernel_config` use exact `sizeof` when supplied; an omitted optional lock/log vtable must be wholly zero, including its `struct_size`. Do not fabricate a larger size without allocating and zeroing that entire declared range.
 
 The common request fields `flags` are reserved unless the header explicitly documents otherwise. Keep them zero for forward compatibility.
 
@@ -120,7 +120,7 @@ The common request fields `flags` are reserved unless the header explicitly docu
 | `notif_queue_capacity` | `64` events | Per subscriber; implementation clamps it to `4..65536`. |
 | `default_search_steps` | `2^32` | Candidate starts examined for a search whose `step_limit` is zero. |
 
-`CDIN_LIMIT_TXN_MEMORY` is reserved as a reported limit identifier, but the current `cdin_kernel_config` has no dedicated transaction-memory limit field. Transactions are still bounded indirectly by document/edit limits and available memory.
+`CDIN_LIMIT_TXN_MEMORY` reports exhaustion of transaction-log memory. ABI 1.0.0 intentionally uses `max_undo_memory` as the per-document cap shared by retained history and active transaction logging; there is no separate transaction-memory configuration field.
 
 ## 6. Thread-safety contract
 
@@ -195,13 +195,13 @@ Use symbolic flags, not numeric literals:
 
 - `CDIN_FEAT_BATCH`, `CDIN_FEAT_TRANSACTIONS`, `CDIN_FEAT_SNAPSHOTS`, `CDIN_FEAT_NOTIFICATIONS`
 - `CDIN_FEAT_SEARCH_LITERAL`, `CDIN_FEAT_SEARCH_BYTES`, `CDIN_FEAT_SEARCH_REGEX` (not set in current build)
-- `CDIN_FEAT_GRAPHEME`, `CDIN_FEAT_CASEFOLD_SIMPLE`, `CDIN_FEAT_LOCKING` (defined but not reflected in the current feature mask)
+- `CDIN_FEAT_GRAPHEME`, `CDIN_FEAT_CASEFOLD_SIMPLE`, `CDIN_FEAT_LOCKING` (caller-provided lock-vtable support)
 
 Search flags are a separate enum-like bit field: `CDIN_SEARCH_CASE_INSENSITIVE`, `CDIN_SEARCH_ANY_NEWLINE`, and `CDIN_SEARCH_WANT_PARTIAL`. They are valid only as specified for the selected search mode.
 
 ## 10. Release and compatibility guidance
 
-ABI version `0.x` and project status `draft` mean the layout has not yet been declared stable for independent binary releases. To ship an application:
+ABI version `1.0.0` is the first stable binary contract. ABI 1 freezes fixed-width 32-bit enum-like values, handle widths, public field order and prototypes for the supported target ABI; structs are native in-process C layouts (including pointers, `size_t`, and platform alignment), not a portable wire format. To ship an application:
 
 1. Vendor or package the matching header and native library together.
 2. Compile your FFI declarations from the header if possible; avoid hand-copying struct layouts across versions.

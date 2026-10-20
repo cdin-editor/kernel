@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stddef.h>
 static int failures;
 
 static const char *st_name(cdin_status st)
@@ -57,6 +58,7 @@ static cdin_status make_kernel(cdin_kernel **out, alloc_ctx *ctx, unsigned mode,
     cdin_kernel_config cfg;
     memset(&cfg, 0, sizeof(cfg));
     cfg.struct_size = sizeof(cfg);
+    cfg.abi_major = CDIN_KERNEL_ABI_MAJOR;
     cfg.allocator = alloc_vtable(ctx);
     cfg.max_documents = max_docs;
     cfg.max_document_size = max_doc_size;
@@ -96,8 +98,8 @@ static cdin_status do_replace(cdin_kernel *k, cdin_doc d, uint64_t start, uint64
     return cdin_doc_replace(k, d, &req, er);
 }
 
-/* History, transactions, subscription, search through the draft-0.2.0 request
- * structs; the tests never look at them again. */
+/* History, transactions, subscription and search use the ABI 1.0.0 request
+ * structs defined in the public header. */
 static cdin_status do_undo(cdin_kernel *k, cdin_doc d, cdin_edit_result *er)
 {
     cdin_history_request rq;
@@ -325,10 +327,15 @@ static void test_txn_move(void)
 
     char buf[32];
     size_t len = 0;
-    read_all(k, d, buf, sizeof(buf), &len);
+    uint64_t txn_len = 0;
+    CHECK(cdin_txn_len(k, t, &txn_len) == CDIN_OK, "txn_len");
+    CHECK(txn_len <= sizeof(buf), "tentative transaction content too large");
+    CHECK(cdin_txn_read(k, t, 0, txn_len, (uint8_t *)buf, sizeof(buf), &len) == CDIN_OK,
+          "txn_read");
     CHECK(len == 12 && memcmp(buf, "hello! world", 12) == 0,
-          "inside txn got %zu bytes '%.*s'", len, (int)len, buf);
+          "tentative txn got %zu bytes '%.*s'", len, (int)len, buf);
 
+    CHECK(cdin_txn_abort(k, t) == CDIN_OK, "txn_abort");
     cdin_kernel_destroy(k);
     expect_clean(&ctx);
     CHECK(ctx.live_blocks == 0, "%llu block(s) leaked",
@@ -581,9 +588,27 @@ static void scenario(alloc_ctx *ctx, unsigned mode, cdin_kernel **k, cdin_doc *d
 
 /* A failed call must not write any out-parameter. struct_size is set by the
  * caller before the call, so it is excluded from the comparison. */
-static int out_untouched(const void *p, size_t n)
+static int out_untouched(const void *p, size_t n, int allow_accepted_seq)
 {
-    const unsigned char *b = (const unsigned char *)p;
+    unsigned char copy[sizeof(cdin_edit_result) > sizeof(cdin_search_result)
+                           ? sizeof(cdin_edit_result) : sizeof(cdin_search_result)];
+    const unsigned char *b;
+    if (!p || n > sizeof(copy)) return 0;
+    memcpy(copy, p, n);
+    /* ABI 1.0.0 permits `details` on failure. After mutation acceptance, an
+     * allocation/limit failure may also expose `accepted_seq` by contract. */
+    if (n == sizeof(cdin_edit_result)) {
+        memset(copy + offsetof(cdin_edit_result, details), SENTINEL,
+               sizeof(((cdin_edit_result *)0)->details));
+        /* A mutation may be accepted and assigned a sequence before a later
+         * allocation fails. In that case accepted_seq is intentionally valid. */
+        if (allow_accepted_seq)
+            memset(copy + offsetof(cdin_edit_result, accepted_seq), SENTINEL,
+                   sizeof(((cdin_edit_result *)0)->accepted_seq));
+    } else if (n == sizeof(cdin_search_result))
+        memset(copy + offsetof(cdin_search_result, details), SENTINEL,
+               sizeof(((cdin_search_result *)0)->details));
+    b = copy;
     for (size_t i = sizeof(uint32_t); i < n; i++)
         if (b[i] != SENTINEL) return 0;
     return 1;
@@ -686,7 +711,7 @@ static cdin_status op_replace(cdin_kernel *k, cdin_doc d, void *arg)
     cdin_status st = do_replace(k, d, 8, 8, (const uint8_t *)"!", 1,
                                   CDIN_ANY_VERSION, 0, &er);
     if (st != CDIN_OK)
-        CHECK(out_untouched(&er, sizeof(er)), "replace: out-parameters modified on %s",
+        CHECK(out_untouched(&er, sizeof(er), st == CDIN_NO_MEMORY || st == CDIN_LIMIT_EXCEEDED), "replace: out-parameters modified on %s",
               st_name(st));
     return st;
 }
@@ -702,7 +727,7 @@ static cdin_status op_replace_shrink(cdin_kernel *k, cdin_doc d, void *arg)
     cdin_status st = do_replace(k, d, 0, 3, (const uint8_t *)"hi", 2,
                                   CDIN_ANY_VERSION, 0, &er);
     if (st != CDIN_OK)
-        CHECK(out_untouched(&er, sizeof(er)), "replace_shrink: out-parameters modified on %s",
+        CHECK(out_untouched(&er, sizeof(er), st == CDIN_NO_MEMORY || st == CDIN_LIMIT_EXCEEDED), "replace_shrink: out-parameters modified on %s",
               st_name(st));
     return st;
 }
@@ -714,7 +739,7 @@ static cdin_status op_undo(cdin_kernel *k, cdin_doc d, void *arg)
     memset(&er, SENTINEL, sizeof(er));
     cdin_status st = do_undo(k, d, &er);
     if (st != CDIN_OK && st != CDIN_INVALID_STATE)
-        CHECK(out_untouched(&er, sizeof(er)), "undo: out-parameters modified on %s",
+        CHECK(out_untouched(&er, sizeof(er), st == CDIN_NO_MEMORY || st == CDIN_LIMIT_EXCEEDED), "undo: out-parameters modified on %s",
               st_name(st));
     return st;
 }
@@ -727,7 +752,7 @@ static cdin_status op_redo(cdin_kernel *k, cdin_doc d, void *arg)
     er.struct_size = sizeof(er);
     cdin_status st = do_redo(k, d, &er);
     if (st != CDIN_OK)
-        CHECK(out_untouched(&er, sizeof(er)), "redo: out-parameters modified on %s",
+        CHECK(out_untouched(&er, sizeof(er), st == CDIN_NO_MEMORY || st == CDIN_LIMIT_EXCEEDED), "redo: out-parameters modified on %s",
               st_name(st));
     return st;
 }
@@ -782,7 +807,7 @@ static cdin_status op_search(cdin_kernel *k, cdin_doc d, void *arg)
     uint64_t rbuf[8];
     cdin_status st = do_search(k, d, (const uint8_t *)"o", 1, &sr, rbuf, 8, 8);
     if (st != CDIN_OK)
-        CHECK(out_untouched(&sr, sizeof(sr)), "search: out-parameters modified on %s",
+        CHECK(out_untouched(&sr, sizeof(sr), 0), "search: out-parameters modified on %s",
               st_name(st));
     return st;
 }
@@ -792,9 +817,8 @@ static void test_sweeps(void)
     banner("test_sweeps", "every operation under injected failure");
     unsigned mode = ALLOC_COUNTING | ALLOC_STRICT;
     /* create does not mutate the scenario document: no version or undo rule.
-     * subscribe and snapshot are marked tolerant: their tables are file-scope
-     * with no free list until P3, so a long sweep legitimately exhausts them
-     * and gets INVALID_HANDLE or LIMIT_EXCEEDED back. */
+     * Subscribe and snapshot tolerate allocation failure as long as the failed
+     * operation leaves no published handle or leaked allocation. */
     check_failure("create_doc", mode, 64, 65536, 0, 0, NULL, op_create, NULL, NULL);
     check_failure("replace", mode, 8, 4096, 1, 0, NULL, op_replace, NULL, "hello cd!");
     check_failure("replace_shrink", mode, 8, 4096, 1, 0, NULL, op_replace_shrink, NULL,
@@ -807,9 +831,9 @@ static void test_sweeps(void)
     check_failure("search", mode, 8, 4096, 0, 0, NULL, op_search, NULL, NULL);
 }
 
- /* UND-020/021: the caller blob is copied out, never borrowed.
+/* UND-020/021: the caller blob is copied out, never borrowed.
  *
- * cdin_doc_get_last_blob does not exist in draft 0.2.0: the blob of the last
+ * There is no cdin_doc_get_last_blob API in ABI 1.0.0: the blob of the last
  * unit travels with the undo/redo request (req.blob_out / result.blob_len).
  * undo publishes blob_before ("ell"), redo blob_after ("IPP"); each probe
  * moves the head, so the probes below are ordered undo -> redo -> undo. */
@@ -828,8 +852,19 @@ static void test_get_last_blob(void)
     cdin_edit_result er;
     memset(&er, 0, sizeof(er));
     er.struct_size = sizeof(er);
-    cdin_status st = do_replace(k, d, 1, 4, (const uint8_t *)"IPP", 3,
-                                CDIN_ANY_VERSION, 0, &er);
+    cdin_replace_request edit;
+    memset(&edit, 0, sizeof(edit));
+    edit.struct_size = sizeof(edit);
+    edit.expected_version = CDIN_ANY_VERSION;
+    edit.start = 1;
+    edit.end = 4;
+    edit.bytes = (const uint8_t *)"IPP";
+    edit.len = 3;
+    edit.blob_before = (const uint8_t *)"ell";
+    edit.blob_before_len = 3;
+    edit.blob_after = (const uint8_t *)"IPP";
+    edit.blob_after_len = 3;
+    cdin_status st = cdin_doc_replace(k, d, &edit, &er);
     CHECK(st == CDIN_OK, "replace: %s", status_name(st));
 
     cdin_history_request rq;
@@ -879,6 +914,51 @@ static void test_get_last_blob(void)
     CHECK(cdin_kernel_destroy(k) == CDIN_OK, "destroy");
     CHECK(alloc_violations(&ctx) == 0 && ctx.live_blocks == 0,
           "leak: %llu violation(s), %llu live", (unsigned long long)alloc_violations(&ctx),
+          (unsigned long long)ctx.live_blocks);
+}
+
+
+/* NOTIF regression: repeatedly subscribing and unsubscribing must not retain
+ * one shell per cycle. A warmup allocates the reusable pool slot; live allocator
+ * blocks must then remain stable while the slot is reused. */
+static void test_notification_churn(void)
+{
+    banner("test_notification_churn", "unsubscribe frees state and invalidates handles");
+    alloc_ctx ctx;
+    cdin_kernel *k = NULL;
+    cdin_doc d = 0;
+    CHECK(make_kernel(&k, &ctx, ALLOC_COUNTING | ALLOC_STRICT, 8, 4096) == CDIN_OK,
+          "create kernel");
+    if (!k) return;
+    CHECK(cdin_doc_create(k, (const uint8_t *)"churn", 5, &d) == CDIN_OK,
+          "create document");
+
+    cdin_notif first = CDIN_INVALID_NOTIF;
+    CHECK(do_subscribe(k, d, &first) == CDIN_OK, "warmup subscribe");
+    CHECK(cdin_notif_unsubscribe(k, first) == CDIN_OK, "warmup unsubscribe");
+    const unsigned long long baseline = (unsigned long long)ctx.live_blocks;
+
+    for (unsigned i = 0; i < 2000; ++i) {
+        cdin_notif n = CDIN_INVALID_NOTIF;
+        cdin_status st = do_subscribe(k, d, &n);
+        CHECK(st == CDIN_OK, "subscribe #%u: %s", i, status_name(st));
+        if (st != CDIN_OK) break;
+        st = cdin_notif_unsubscribe(k, n);
+        CHECK(st == CDIN_OK, "unsubscribe #%u: %s", i, status_name(st));
+        CHECK((unsigned long long)ctx.live_blocks == baseline,
+              "live allocations grew after cycle #%u: %llu != %llu", i,
+              (unsigned long long)ctx.live_blocks, baseline);
+        size_t count = 0;
+        st = cdin_notif_drain(k, n, NULL, 0, &count);
+        CHECK(st == CDIN_INVALID_HANDLE, "stale handle drain #%u: %s", i,
+              status_name(st));
+    }
+
+    CHECK(cdin_doc_close(k, d) == CDIN_OK, "close document");
+    CHECK(cdin_kernel_destroy(k) == CDIN_OK, "destroy kernel");
+    CHECK(alloc_violations(&ctx) == 0 && ctx.live_blocks == 0,
+          "allocator issue after churn: %llu violation(s), %llu live blocks",
+          (unsigned long long)alloc_violations(&ctx),
           (unsigned long long)ctx.live_blocks);
 }
 
@@ -970,6 +1050,7 @@ int main(int argc, char **argv)
         { "ops_sweep", test_ops_failure_sweep },
         { "sweeps", test_sweeps },
         { "get_last_blob", test_get_last_blob },
+        { "notification_churn", test_notification_churn },
         { "search_index", test_search_index }
     };
     for (size_t i = 0; i < sizeof(tests) / sizeof(tests[0]); i++) {

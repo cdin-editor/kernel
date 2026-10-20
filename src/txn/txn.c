@@ -57,8 +57,11 @@ cdin_status txn_begin_locked(cdin_kernel *k, doc *d, const cdin_txn_begin_reques
 static cdin_status tx_edits_reserve(cdin_kernel *k, txn_state *tx)
 {
     if (tx->n == tx->cap) {
-        size_t ncap = tx->cap ? tx->cap * 2 : 8, ncap_bytes;
+        size_t ncap, ncap_bytes;
         edit_rec *ne;
+        if (!tx->cap) ncap = 8;
+        else if (tx->cap > SIZE_MAX / 2) return CDIN_LIMIT_EXCEEDED;
+        else ncap = tx->cap * 2;
         if (k_mul(ncap, sizeof(edit_rec), &ncap_bytes) == 0) return CDIN_LIMIT_EXCEEDED;
         ne = tx->edits ? k_realloc(k, tx->edits, tx->cap * sizeof(edit_rec), ncap_bytes)
                        : k_alloc(k, ncap_bytes);
@@ -75,6 +78,7 @@ cdin_status txn_replace_locked(cdin_kernel *k, txn_state *tx, doc *d,
     cdin_status st;
     edit_rec rec;
     uint64_t newlen;
+    size_t next_tx_bytes, added_bytes;
     details_clear(out);
     if (!req) return CDIN_INVALID_ARGUMENT;
     st = txn_replace_validate(k, tx->work, req, out);
@@ -85,7 +89,10 @@ cdin_status txn_replace_locked(cdin_kernel *k, txn_state *tx, doc *d,
         out->new_length = tx->work->len; out->blob_len = 0;
         return CDIN_OK;
     }
-    if ((uint64_t)tx->bytes + (req->end - req->start) + req->len + sizeof(edit_rec) > k->max_undo_memory) {
+    if (k_add((size_t)(req->end - req->start), req->len, &added_bytes) == 0 ||
+        k_add(added_bytes, sizeof(edit_rec), &added_bytes) == 0 ||
+        k_add(tx->bytes, added_bytes, &next_tx_bytes) == 0 ||
+        (uint64_t)next_tx_bytes > k->max_undo_memory) {
         details_limit(out, CDIN_LIMIT_TXN_MEMORY);
         return CDIN_LIMIT_EXCEEDED;
     }
@@ -98,7 +105,7 @@ cdin_status txn_replace_locked(cdin_kernel *k, txn_state *tx, doc *d,
     if (st != CDIN_OK) { edits_free(k, &rec, 1); return st; }
     text_splice(k, tx->work, req->start, req->end - req->start, req->bytes, req->len);
     tx->edits[tx->n++] = rec;
-    tx->bytes += edit_bytes(&rec) + sizeof(edit_rec);
+    tx->bytes = next_tx_bytes;
     out->new_version = d->version;
     out->edit_count = 1;
     out->start = rec.start; out->removed = rec.removed_len; out->inserted = rec.inserted_len;

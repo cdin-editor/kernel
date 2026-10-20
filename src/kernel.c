@@ -46,7 +46,7 @@ cdin_status cdin_features(uint64_t *mask)
     if (!mask) return CDIN_INVALID_ARGUMENT;
     *mask = CDIN_FEAT_BATCH | CDIN_FEAT_TRANSACTIONS | CDIN_FEAT_SNAPSHOTS | CDIN_FEAT_NOTIFICATIONS |
             CDIN_FEAT_SEARCH_LITERAL | CDIN_FEAT_SEARCH_BYTES | CDIN_FEAT_GRAPHEME |
-            CDIN_FEAT_CASEFOLD_SIMPLE;
+            CDIN_FEAT_CASEFOLD_SIMPLE | CDIN_FEAT_LOCKING;
     return CDIN_OK;
 }
 
@@ -91,10 +91,20 @@ cdin_status cdin_kernel_create(const cdin_kernel_config *cfg, cdin_kernel **out)
     st = check_struct(cfg, sizeof(cdin_kernel_config), sizeof(cdin_kernel_config));
     if (st != CDIN_OK) return st;
     if (cfg->abi_major != CDIN_KERNEL_ABI_MAJOR) return CDIN_VERSION_MISMATCH;
-    if (cfg->allocator.struct_size < sizeof(cdin_allocator) || !cfg->allocator.alloc ||
+    /* These vtables are embedded by value in the v1 config. Unlike the outer
+     * config, they cannot carry an independently-sized extension tail. */
+    if (cfg->allocator.struct_size != sizeof(cdin_allocator) || !cfg->allocator.alloc ||
         !cfg->allocator.realloc || !cfg->allocator.free)
         return CDIN_INVALID_ARGUMENT;
     if ((cfg->lock.lock == NULL) != (cfg->lock.unlock == NULL)) return CDIN_INVALID_ARGUMENT;
+    if (cfg->lock.struct_size != 0 && cfg->lock.struct_size != sizeof(cdin_lock_vtable))
+        return CDIN_INVALID_ARGUMENT;
+    if (cfg->lock.struct_size == 0 && (cfg->lock.ctx || cfg->lock.lock || cfg->lock.unlock))
+        return CDIN_INVALID_ARGUMENT;
+    if (cfg->log.struct_size != 0 && cfg->log.struct_size != sizeof(cdin_log_sink))
+        return CDIN_INVALID_ARGUMENT;
+    if (cfg->log.struct_size == 0 && (cfg->log.ctx || cfg->log.log))
+        return CDIN_INVALID_ARGUMENT;
     k = cfg->allocator.alloc(cfg->allocator.ctx, sizeof *k);
     if (!k) return CDIN_NO_MEMORY;
     memset(k, 0, sizeof *k);

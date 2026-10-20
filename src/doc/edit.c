@@ -56,6 +56,16 @@ cdin_status accept_check(cdin_kernel *k, doc *d, cdin_version expected, cdin_edi
         out->details.current = d->version;
         return CDIN_STALE_VERSION;
     }
+    /* UINT64_MAX is reserved for CDIN_ANY_VERSION and must never become a
+     * committed document version. Do not wrap either monotonic counter. */
+    if (d->version >= UINT64_MAX - 1) {
+        details_limit(out, CDIN_LIMIT_VERSION);
+        return CDIN_LIMIT_EXCEEDED;
+    }
+    if (k->seq == UINT64_MAX) {
+        details_limit(out, CDIN_LIMIT_SEQUENCE);
+        return CDIN_LIMIT_EXCEEDED;
+    }
     out->accepted_seq = ++k->seq;
     return CDIN_OK;
 }
@@ -64,20 +74,27 @@ cdin_status accept_check(cdin_kernel *k, doc *d, cdin_version expected, cdin_edi
 cdin_status commit_prepare(cdin_kernel *k, doc *d, commit_kind kind, const edit_rec *edits, size_t n,
                            uint64_t key, const blobs *b, commit_prep *cp)
 {
-    size_t bytes = n * sizeof(edit_rec);
-    size_t bb = b ? b->before_len : 0, ba = b ? b->after_len : 0;
+    size_t bytes, bb = b ? b->before_len : 0, ba = b ? b->after_len : 0;
+    size_t total;
+    cdin_status st;
     int co;
     memset(cp, 0, sizeof *cp);
-    for (size_t i = 0; i < n; i++) bytes += edit_bytes(&edits[i]);
+    if (k_mul(n, sizeof(edit_rec), &bytes) == 0) return CDIN_LIMIT_EXCEEDED;
+    for (size_t i = 0; i < n; i++) {
+        if (k_add(bytes, edit_bytes(&edits[i]), &total) == 0) return CDIN_LIMIT_EXCEEDED;
+        bytes = total;
+    }
     co = kind == CK_EDIT && key != 0 && d->coalesce_unit != 0 && d->head == d->nunits && d->nunits > 0 &&
          d->units[d->nunits - 1].id == d->coalesce_unit && d->units[d->nunits - 1].key == key;
     if (co) {
         unit *u = &d->units[d->nunits - 1];
         size_t want_bytes;
-        if (u->n + n > u->cap) {
-            size_t ncap = u->cap * 2;
+        size_t combined;
+        if (k_add(u->n, n, &combined) == 0 || combined > UINT32_MAX) return CDIN_LIMIT_EXCEEDED;
+        if (combined > u->cap) {
+            size_t ncap = u->cap <= SIZE_MAX / 2 ? u->cap * 2 : combined;
             edit_rec *ne;
-            if (ncap < u->n + n) ncap = u->n + n;
+            if (ncap < combined) ncap = combined;
             if (k_mul(ncap, sizeof(edit_rec), &want_bytes) == 0) return CDIN_LIMIT_EXCEEDED;
             ne = k_realloc(k, u->edits, u->cap * sizeof(edit_rec), want_bytes);
             if (!ne) return CDIN_NO_MEMORY;
@@ -89,8 +106,11 @@ cdin_status commit_prepare(cdin_kernel *k, doc *d, commit_kind kind, const edit_
             if (!cp->blob_after) return CDIN_NO_MEMORY;
             cp->blob_after_len = ba;
         }
+        if (k_add(bytes, ba, &cp->delta_bytes) == 0) {
+            commit_abort(k, cp);
+            return CDIN_LIMIT_EXCEEDED;
+        }
         cp->coalesce = 1;
-        cp->delta_bytes = bytes + ba;
         return CDIN_OK;
     }
     if (bb) {
@@ -103,8 +123,12 @@ cdin_status commit_prepare(cdin_kernel *k, doc *d, commit_kind kind, const edit_
         if (!cp->blob_after) { commit_abort(k, cp); return CDIN_NO_MEMORY; }
         cp->blob_after_len = ba;
     }
-    if (units_reserve(k, d, d->head + 1) != CDIN_OK) { commit_abort(k, cp); return CDIN_NO_MEMORY; }
-    cp->delta_bytes = bytes + bb + ba;
+    st = units_reserve(k, d, d->head + 1);
+    if (st != CDIN_OK) { commit_abort(k, cp); return st; }
+    if (k_add(bytes, bb, &total) == 0 || k_add(total, ba, &cp->delta_bytes) == 0) {
+        commit_abort(k, cp);
+        return CDIN_LIMIT_EXCEEDED;
+    }
     return CDIN_OK;
 }
 
@@ -133,8 +157,8 @@ void commit_finish(cdin_kernel *k, doc *d, commit_kind kind, commit_prep *cp, ed
         k_free(k, u->blob_after, old_after);
         u->blob_after = cp->blob_after;
         u->blob_after_len = cp->blob_after_len;
-        u->bytes = u->bytes + cp->delta_bytes - old_after;
-        d->undo_bytes = d->undo_bytes + cp->delta_bytes - old_after;
+        u->bytes = (u->bytes - old_after) + cp->delta_bytes;
+        d->undo_bytes = (d->undo_bytes - old_after) + cp->delta_bytes;
         k_free(k, edits, n * sizeof(edit_rec));              /* buffers moved into the unit; free the shell */
     } else {
         units_drop_redo(k, d);                                /* UNDO-003: discard redo units */
@@ -306,6 +330,12 @@ cdin_status doc_batch_locked(cdin_kernel *k, cdin_doc dh, const cdin_batch_reque
     if (req->coalesce_key != 0) return CDIN_INVALID_ARGUMENT;
     if (d->tx) return CDIN_BUSY;
     n = req->count;
+    if (n > CDIN_MAX_BATCH_EDITS_HARD) {
+        details_limit(out, CDIN_LIMIT_BATCH_EDITS);
+        out->details.requested = (uint64_t)n;
+        out->details.length = CDIN_MAX_BATCH_EDITS_HARD;
+        return CDIN_LIMIT_EXCEEDED;
+    }
     if (n > 0 && (!req->starts || !req->ends || !req->bytes || !req->lens)) return CDIN_INVALID_ARGUMENT;
     cur = d->txt->len;
     for (i = 0; i < n; i++) {
@@ -320,6 +350,10 @@ cdin_status doc_batch_locked(cdin_kernel *k, cdin_doc dh, const cdin_batch_reque
         if (st == CDIN_OK) st = text_pos_check(d->txt, en);
         if (st != CDIN_OK) { out->details.requested = s; out->details.length = d->txt->len; return st; }
         if (req->lens[i] > k->max_edit_size) { details_limit(out, CDIN_LIMIT_EDIT_SIZE); return CDIN_LIMIT_EXCEEDED; }
+        if (req->lens[i] > UINT64_MAX - total_ins) {
+            details_limit(out, CDIN_LIMIT_EDIT_SIZE);
+            return CDIN_LIMIT_EXCEEDED;
+        }
         total_ins += req->lens[i];
         if (total_ins > k->max_edit_size) { details_limit(out, CDIN_LIMIT_EDIT_SIZE); return CDIN_LIMIT_EXCEEDED; }
         if (en > s || req->lens[i]) noop = 0;
@@ -344,8 +378,15 @@ cdin_status doc_batch_locked(cdin_kernel *k, cdin_doc dh, const cdin_batch_reque
     st = accept_check(k, d, req->expected_version, out);
     if (st != CDIN_OK) return st;
 
-    e = k_alloc(k, n * sizeof *e);
-    if (!e) return CDIN_NO_MEMORY;
+    {
+        size_t edit_array_bytes;
+        if (k_mul(n, sizeof *e, &edit_array_bytes) == 0) {
+            details_limit(out, CDIN_LIMIT_BATCH_EDITS);
+            return CDIN_LIMIT_EXCEEDED;
+        }
+        e = k_alloc(k, edit_array_bytes);
+        if (!e) return CDIN_NO_MEMORY;
+    }
     for (i = 0; i < n; i++) {
         /* applied back to front, so each start is in the coordinates just before its edit */
         size_t j = n - 1 - i;

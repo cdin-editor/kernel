@@ -1,6 +1,6 @@
 # Installation and packaging
 
-`cdin-kernel` provides a C11 source build, a static library, a shared library, a public header, and a `pkg-config` file. The ABI is still marked **draft 0.2.0**; treat pre-release binaries as version-matched and rebuild bindings when the ABI changes.
+`cdin-kernel` provides a C11 source build, a static library, a shared library, a public header, and a `pkg-config` file. The C ABI is stable at **1.0.0** and is synchronized with CDIN Spec 1.0.0. ABI major 1 freezes public struct layouts, fixed-width enum-like fields, constants and prototypes for the supported target C ABI; build bindings against the shipped header and query the loaded ABI version at startup.
 
 ## Build and test
 
@@ -96,4 +96,4 @@ For Linux/macOS, extract the `.tar.gz` and run `./install.sh`; by default it ins
 
 For Windows, extract the `.zip`, open PowerShell in the extracted directory, and run `./install.ps1`. The default destination is `%LOCALAPPDATA%\cdin-kernel`; `-Prefix` changes it and `-AddBinToUserPath` optionally adds the DLL directory to the user's PATH. The Windows package targets MinGW-w64 UCRT64 and does not claim MSVC ABI compatibility.
 
-`BUILD-INFO.txt` records both the package version and the C ABI version. They are tracked separately; for example, release package `0.1.0` may contain the draft C ABI `0.2.0`. Release packages are attached to the GitHub Release only after the source tests, installed-consumer smoke test, and archive-install test pass on the runner that built each artifact.
+`BUILD-INFO.txt` records both the package version and the C ABI version. They are tracked separately; for this stable release, package version and C ABI version both default to `1.0.0` (they remain separately recorded so a future package-only release can intentionally differ). Release packages are attached to the GitHub Release only after the source tests, installed-consumer smoke test, and archive-install test pass on the runner that built each artifact.

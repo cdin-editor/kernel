@@ -17,7 +17,7 @@ Read the [user guide](docs/user-guide.md) to understand behavioral contracts, th
 
 ## Rules
 
-- Public ABI changes require project-owner review. The ABI is draft `0.2.0`; preserve compatibility deliberately and update versioning notes when declarations change.
+- Public ABI changes require project-owner review. The ABI `1.0.0` contract is stable. Preserve major-version compatibility and update the ABI docs, feature reporting, vectors, and language bindings for any public declaration change.
 - Every public function reports a `cdin_status`; do not silently discard errors.
 - Avoid global mutable state and reentrant calls from callbacks unless the public contract explicitly permits them.
 - Do not call `exit`, `abort`, or `assert` on caller-controlled input.

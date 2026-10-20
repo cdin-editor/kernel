@@ -20,7 +20,7 @@ ABI_MAJOR := $(shell awk '$$2 == "CDIN_KERNEL_ABI_MAJOR" { value = $$3; sub(/u$$
 ABI_MINOR := $(shell awk '$$2 == "CDIN_KERNEL_ABI_MINOR" { value = $$3; sub(/u$$/, "", value); print value; exit }' include/cdin/kernel.h)
 ABI_PATCH := $(shell awk '$$2 == "CDIN_KERNEL_ABI_PATCH" { value = $$3; sub(/u$$/, "", value); print value; exit }' include/cdin/kernel.h)
 ABI_VERSION := $(ABI_MAJOR).$(ABI_MINOR).$(ABI_PATCH)
-# Package version may differ from the draft C ABI version (e.g. package 0.1.0 / ABI 0.2.0).
+# The default package version tracks the stable public C ABI version. Override only for a deliberate package-only release.
 PACKAGE_VERSION ?= $(ABI_VERSION)
 
 WARN    = -Wall -Wextra -Wshadow -Wconversion -Wstrict-prototypes -Wformat=2 -Wpedantic -Werror
@@ -197,13 +197,16 @@ vectors: $(RUNNER)
 	-@$(VEC_LOOP_ALL)
 
 check-tests: $(TESTS)
-	$(TESTS)
+	$(BUILD)/test_p1
+	$(BUILD)/test_p3_conc
 
-$(TESTS): tests/test_p1.c tests/test_p3_conc.c $(OBJ)/runner_alloc_strict.o $(LIB)
+$(BUILD)/test_p1: tests/test_p1.c $(OBJ)/runner_alloc_strict.o $(LIB) include/cdin/kernel.h src/internal.h conformance/runner/alloc_strict.h
 	$(CC) $(CFLAGS) $(LDFLAGS) -Isrc -Iconformance/runner tests/test_p1.c \
-	    $(OBJ)/runner_alloc_strict.o $(LIB) -o $(BUILD)/test_p1
+	    $(OBJ)/runner_alloc_strict.o $(LIB) -o $@
+
+$(BUILD)/test_p3_conc: tests/test_p3_conc.c $(OBJ)/runner_alloc_strict.o $(LIB) include/cdin/kernel.h conformance/runner/alloc_strict.h
 	$(CC) $(CFLAGS) $(LDFLAGS) -Isrc -Iconformance/runner tests/test_p3_conc.c \
-	    $(OBJ)/runner_alloc_strict.o $(LIB) $(LDLIBS) -o $(BUILD)/test_p3_conc
+	    $(OBJ)/runner_alloc_strict.o $(LIB) $(LDLIBS) -o $@
 
 tests: check-tests
 
@@ -244,8 +247,8 @@ build/fuzz_abi: tests/fuzz_abi.c $(LIB)
 build/fuzz_classifiers: tests/fuzz_classifiers.c $(LIB)
 	$(CC) $(CFLAGS) $(LDFLAGS) tests/fuzz_classifiers.c -Iinclude $(LIB) -o $@
 
-build/fuzz_vector_parser: tests/fuzz_vector_parser.c $(R_OBJ)
-	$(CC) $(CFLAGS) $(LDFLAGS) tests/fuzz_vector_parser.c -Iinclude -Iconformance/runner $(R_OBJ) -o $@
+build/fuzz_vector_parser: tests/fuzz_vector_parser.c conformance/runner/parser.c conformance/runner/parser.h
+	$(CC) $(CFLAGS) $(LDFLAGS) tests/fuzz_vector_parser.c conformance/runner/parser.c -Iinclude -Iconformance/runner -o $@
 
 support/strict_alloc.o: support/strict_alloc.c
 	$(CC) $(CFLAGS) -c $< -o $@

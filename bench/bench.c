@@ -31,7 +31,7 @@ int main(void)
 {
     strict_alloc al; cdin_kernel_config c; size_t sizes[3] = { 1 << 20, 16 << 20, 128 << 20 };
     strict_init(&al);
-    memset(&c, 0, sizeof c); c.struct_size = sizeof c; c.allocator = strict_vtable(&al); c.max_undo_memory = (uint64_t)1 << 28;
+    memset(&c, 0, sizeof c); c.struct_size = sizeof c; c.abi_major = CDIN_KERNEL_ABI_MAJOR; c.allocator = strict_vtable(&al); c.max_undo_memory = (uint64_t)1 << 28;
     cdin_kernel_create(&c, &K);
     printf("%-34s %12s %12s\n", "operation", "size", "time");
     for (int si = 0; si < 3; si++) {

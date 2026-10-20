@@ -34,7 +34,7 @@ vector notif.basic.unsubscribe_discards covers NOTIF-010
   unsubscribe handle=ks1
   expect CDIN_OK
   drain handle=ks1
-  expect CDIN_OK count=0
+  expect CDIN_INVALID_HANDLE
   close_doc handle=k1
   expect CDIN_OK
 

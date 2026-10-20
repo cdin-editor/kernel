@@ -2,7 +2,7 @@
 
 `cdin-kernel` is a binary-safe text editing engine with a C ABI. It provides document lifecycle, byte-range edits, undo/redo, transactions, immutable snapshots, text/position helpers, literal and byte search, and bounded change notifications.
 
-**Project status:** draft. The ABI reports version **0.2.0**. Until the project declares a stable release, rebuild language bindings against the matching header and library rather than assuming binary compatibility across revisions.
+**Project status:** stable. The C ABI reports version **1.0.0** and is synchronized with CDIN Spec **1.0.0**. ABI-major changes are breaking; compatible additions must preserve the published ABI 1 contract. Compile bindings against the shipped header and query the loaded library version at startup.
 
 ## Start here
 
@@ -16,7 +16,7 @@ make ffi-shared    # build the optional, small-ABI FFI example bridge
 make bench-scale SIZE_MIB=125  # benchmark 125 MiB, 500 MiB, or 1024 MiB documents
 ```
 
-The core public API is defined by the single public header: [`include/cdin/kernel.h`](include/cdin/kernel.h). The bridge in `examples/ffi/` is for examples and is **not** part of the stable kernel ABI.
+The core public API is defined by the single public header: [`include/cdin/kernel.h`](include/cdin/kernel.h). The bridge in `examples/ffi/` is an example adapter and is **not** part of the stable kernel ABI. The public header defines the full frozen ABI 1.0.0 surface.
 
 ## Large-document benchmark
 
