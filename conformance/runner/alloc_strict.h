@@ -16,7 +16,7 @@
 #ifndef ALLOC_STRICT_H
 #define ALLOC_STRICT_H
 
-#include "cdin/kernel.h"
+#include <cdin/kernel.h>
 #include <stdatomic.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -44,8 +44,8 @@ struct alloc_ctx {
     char last_violation[160];
     cdin_allocator vtable;
     struct alloc_block *head;
-    /* The kernel frees a snapshot's block outside its own lock (docs/
-     * concurrency.md), so the harness list is reachable from several threads. */
+    /* Snapshot storage may be freed outside the kernel lock, so the harness
+     * allocation list can be accessed by multiple threads at once. */
     atomic_uint gate;
 };
 

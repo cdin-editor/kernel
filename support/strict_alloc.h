@@ -9,11 +9,10 @@
 #ifndef CDIN_SUPPORT_STRICT_ALLOC_H
 #define CDIN_SUPPORT_STRICT_ALLOC_H
 
-#include "cdin/kernel.h"
+#include <cdin/kernel.h>
 
-/* Complete on purpose: bench/bench.c and fuzz/fuzz_ops.c declare
- * `strict_alloc al;` on the stack — a support type the user must
- * instantiate wants to be instantiatable. */
+/* The full definition is intentional: benchmark and fuzz targets create
+ * `strict_alloc` instances directly on the stack. */
 typedef struct strict_alloc {
     cdin_allocator vtable;
     struct sa_node *head;
@@ -25,7 +24,6 @@ typedef struct strict_alloc {
     size_t peak;            /* max live blocks */
 } strict_alloc;
 
-typedef struct strict_alloc strict_alloc;
 
 void strict_init(strict_alloc *sa);
 /* The vtable for cdin_kernel_config.allocator. */

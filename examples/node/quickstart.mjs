@@ -1,3 +1,7 @@
+/**
+ * Minimal JavaScript example for the optional cdin-kernel FFI bridge.
+ * Build the bridge with `make ffi-shared` before running this file.
+ */
 import koffi from 'koffi';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';

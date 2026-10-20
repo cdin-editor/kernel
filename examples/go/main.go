@@ -1,3 +1,5 @@
+// Package main demonstrates calling the cdin-kernel bridge through cgo.
+
 package main
 
 /*

@@ -4,7 +4,7 @@
  * These tests exercise the public contract and link the real kernel. They
  * drive allocation through the injected allocator where relevant.
  */
-#include "cdin/kernel.h"
+#include <cdin/kernel.h>
 #include "alloc_strict.h"
 #include "internal.h"   /* struct doc + handle pool, for the zero-init check */
 

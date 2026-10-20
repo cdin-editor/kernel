@@ -2,7 +2,7 @@
  * violate the allocator contract or corrupt state). Arguments are derived from the bytes, so the
  * fuzzer freely produces invalid positions, handles, versions, flags and struct sizes. Build with
  * `make fuzz` (clang). Without libFuzzer, -DSTANDALONE builds a driver that replays files. */
-#include "cdin/kernel.h"
+#include <cdin/kernel.h>
 #include "support/strict_alloc.h"
 #include <stdio.h>
 #include <stdlib.h>

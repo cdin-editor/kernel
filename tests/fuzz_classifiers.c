@@ -1,5 +1,5 @@
 /* Fuzz target: line, raw-region and Unicode position classifiers. */
-#include "cdin/kernel.h"
+#include <cdin/kernel.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>

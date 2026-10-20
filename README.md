@@ -1,51 +1,95 @@
 # cdin-kernel
 
-`cdin-kernel` is a binary-safe text editing engine with a C ABI. It provides document lifecycle, byte-range edits, undo/redo, transactions, immutable snapshots, text/position helpers, literal and byte search, and bounded change notifications.
+`cdin-kernel` is a portable C11 library for binary-safe text editing. It provides document handles, edits, undo/redo, transactions, immutable snapshots, text-position helpers, literal/byte search, and change notifications through a stable C ABI.
 
-**Project status:** stable. The C ABI reports version **1.0.0** and is synchronized with CDIN Spec **1.0.0**. ABI-major changes are breaking; compatible additions must preserve the published ABI 1 contract. Compile bindings against the shipped header and query the loaded library version at startup.
+## Install
 
-## Start here
+Download the package for your platform from the project's GitHub Releases page, extract it, and run the included installer:
 
-```sh
-make              # build the static library: build/libcdin_kernel.a
-make quickstart    # compile and run the minimal C example
-make check         # conformance vectors + C regression tests
-make shared        # build a shared library for FFI consumers
-make install       # install header + static/shared library + pkg-config file
-make ffi-shared    # build the optional, small-ABI FFI example bridge
-make bench-scale SIZE_MIB=125  # benchmark 125 MiB, 500 MiB, or 1024 MiB documents
+- Linux/macOS: `./install.sh --prefix "$HOME/.local"`
+- Windows: run `./install.ps1` in PowerShell. The release package targets 64-bit MinGW-w64 UCRT64.
+
+The public header is `cdin/kernel.h`. In C or C++, include it with:
+
+```c
+#include <cdin/kernel.h>
 ```
 
-The core public API is defined by the single public header: [`include/cdin/kernel.h`](include/cdin/kernel.h). The bridge in `examples/ffi/` is an example adapter and is **not** part of the stable kernel ABI. The public header defines the full frozen ABI 1.0.0 surface.
+After installation, compile a program with `pkg-config`:
 
-## Large-document benchmark
+```sh
+cc app.c $(pkg-config --cflags --libs cdin-kernel) -o app
+```
 
-Run a single local measurement with `make bench-scale SIZE_MIB=125`, `500`, or `1024` (1 GiB). The benchmark measures kernel creation, document load, line-count/index construction, a literal no-match search, snapshot acquisition, and document-load throughput. It prints one CSV row so it can be collected by CI.
+See [Getting started](docs/getting-started.md) for a complete example and [Installation](docs/installation.md) for static/shared linking, custom prefixes, and release packages.
 
-The GitHub Actions workflow [Large-document benchmarks](.github/workflows/benchmark.yml) runs all three sizes on an Ubuntu 24.04 hosted runner, writes a table to the Actions run summary, and uploads per-size CSV artifacts. The measurements are indicative: runner load, CPU model, and memory pressure affect results, so compare runs on the same runner class and do not treat one run as a universal performance guarantee. The 1 GiB case needs several GiB of available RAM.
+## Build instructions
 
-Release packages are built and tested on Linux x86-64/ARM64, macOS x86-64/ARM64, and Windows x86-64 (MinGW-w64 UCRT64).
+### GNU/Linux
 
-## Documentation
+Install a C compiler and Make, then build and test:
 
-- [Documentation home](docs/index.md)
-- **[User guide](docs/user-guide.md)** — recommended first read; lifecycle, reading, editing, versions, undo/redo, transactions, snapshots, search, notifications, and text positions.
-- [Getting started: build and link](docs/getting-started.md)
-- [Installation and packaging](docs/installation.md) — install targets, staged installs, `pkg-config`, and release archives.
-- [C ABI reference and compatibility rules](docs/abi.md)
-- [Using from Python, Go, JavaScript, and TypeScript](docs/language-bindings.md)
-- [Limits, statuses, and current support](docs/limits-and-status.md)
-- [Architecture and ownership](docs/architecture.md)
-- [Developer guide: tests, vectors, and change workflow](docs/development.md)
-- [Conformance vector format](conformance/FORMAT.md)
+```sh
+sudo apt-get install build-essential pkg-config
+make all shared quickstart
+make check
+sudo make install
+```
 
-## Feature and behavior notes
+Supported release architectures are x86-64 and ARM64.
 
-- Text is stored as length-delimited **bytes**. UTF-8 is interpreted for positions/search, but input bytes are never normalized, BOM-stripped, or NUL-terminated by the kernel.
-- Use `expected_version` on mutations to detect stale edits. New documents begin at version `0`.
-- The caller supplies allocator callbacks when creating a kernel. A lock vtable is optional; without one, use a kernel from one thread at a time.
-- Regex search is not implemented and returns `CDIN_UNSUPPORTED`. `CDIN_RELOAD_KEEP_HISTORY` is also not supported.
-- Default resource limits are declared in `include/cdin/kernel.h` and explained in [limits and status](docs/limits-and-status.md).
+### macOS
+
+Install the Xcode Command Line Tools, then run:
+
+```sh
+make all shared quickstart
+make check
+sudo make install
+```
+
+Release packages are available for Intel (x86-64) and Apple silicon (ARM64).
+
+### Windows (64-bit)
+
+Install [MSYS2](https://www.msys2.org/) and use its **UCRT64** terminal. Install the MinGW-w64 GCC and Make packages, then run:
+
+```sh
+make all shared quickstart
+make check
+make PREFIX=/ucrt64 install
+```
+
+The published Windows package targets MinGW-w64 UCRT64; MSVC compatibility is not claimed. A 32-bit Windows build is not currently published.
+
+### GNU/Linux with Docker
+
+A multi-architecture SDK image is published to Docker Hub for `linux/amd64` and `linux/arm64`. Replace `<dockerhub-user>` with the account that publishes the image:
+
+```sh
+docker pull <dockerhub-user>/cdin-kernel:latest
+docker run --rm -it -v "$PWD:/workspace" <dockerhub-user>/cdin-kernel:latest
+```
+
+The image includes the public header, static/shared libraries, GCC, Make, and `pkg-config`. Use it as a build environment for applications that link against `cdin-kernel`; it is not an application image. See [Docker usage](docs/installation.md#docker-sdk-image).
+
+## Examples and documentation
+
+- [Examples index](examples/README.md)
+- [C quickstart](examples/c/quickstart.c)
+- [User guide](docs/user-guide.md)
+- [C ABI reference](docs/abi.md)
+- [Python, Go, JavaScript, and TypeScript examples](docs/language-bindings.md)
+- [Limits and status codes](docs/limits-and-status.md)
+- [Architecture](docs/architecture.md)
+- [Developer guide](docs/development.md)
+
+## Third-party
+
+- **C standard library** — provided by the target platform.
+- **POSIX Threads (`pthread`)** — system library used on Unix-like builds; not bundled.
+- **Unicode tables** — generated into the source tree from Python's `unicodedata` and the third-party `regex` module. These Python packages are only needed to regenerate the tables, not to build or run the library. See `tools/gen_unicode.py` for data provenance and limitations.
+- **Build tools** — a C11 compiler, Make, and an archiver (`ar`) are required to build from source. No third-party runtime library is bundled or linked by the core.
 
 ## License
 

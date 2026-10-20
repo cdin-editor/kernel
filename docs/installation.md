@@ -97,3 +97,28 @@ For Linux/macOS, extract the `.tar.gz` and run `./install.sh`; by default it ins
 For Windows, extract the `.zip`, open PowerShell in the extracted directory, and run `./install.ps1`. The default destination is `%LOCALAPPDATA%\cdin-kernel`; `-Prefix` changes it and `-AddBinToUserPath` optionally adds the DLL directory to the user's PATH. The Windows package targets MinGW-w64 UCRT64 and does not claim MSVC ABI compatibility.
 
 `BUILD-INFO.txt` records both the package version and the C ABI version. They are tracked separately; for this stable release, package version and C ABI version both default to `1.0.0` (they remain separately recorded so a future package-only release can intentionally differ). Release packages are attached to the GitHub Release only after the source tests, installed-consumer smoke test, and archive-install test pass on the runner that built each artifact.
+
+## Docker SDK image
+
+The Docker image is a development SDK for applications that need to compile and link against `cdin-kernel`. It contains the installed public header, static and shared libraries, GCC, Make, and `pkg-config`. It is published for `linux/amd64` and `linux/arm64`; it is not intended to be the final runtime image for an application.
+
+Replace `<dockerhub-user>` with the Docker Hub account used by this project:
+
+```sh
+docker pull <dockerhub-user>/cdin-kernel:latest
+docker run --rm -it -v "$PWD:/workspace" <dockerhub-user>/cdin-kernel:latest
+```
+
+Inside the container, compile a consumer using the installed metadata:
+
+```sh
+cc app.c $(pkg-config --cflags --libs cdin-kernel) -o app
+```
+
+To publish the image from GitHub Actions, add these repository secrets:
+
+- `DOCKER_USERNAME` — Docker Hub username and image namespace.
+- `DOCKER_TOKEN` — a Docker Hub access token with permission to push to the account.
+
+The release workflow publishes the image after a tagged GitHub Release succeeds. Version tags are derived from the `vMAJOR.MINOR.PATCH` release tag; stable releases also update `latest`. The build tests the library for each target architecture before publishing the image.
+

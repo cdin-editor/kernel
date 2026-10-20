@@ -5,6 +5,22 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-10-20
+
+### Added
+- Add a multi-architecture Docker SDK image for `linux/amd64` and `linux/arm64`.
+- Publish the SDK image to Docker Hub from the tag-based GitHub Actions release workflow, with semantic-version tags and `latest` reserved for stable releases.
+- Include browsable documentation and examples in downloadable release archives, while retaining the installed documentation.
+
+### Improved
+- Organize public-header comments into clearer API sections, covering caller-owned buffers, version checks, thread safety, resource lifetime, and ABI compatibility.
+- Simplify the README and align build, installation, and getting-started instructions with the actual Makefile and release installers for Linux, macOS, Windows, and Docker.
+- Rewrite the C quickstart comments and add an index for C, Python, Go, JavaScript, and TypeScript examples; document the optional FFI bridge as sample code rather than part of the public ABI.
+- Improve forward literal-search performance. Linux uses `memmem` when the search is byte-exact, uncancellable, and has a full candidate-window budget; other platforms use a selective-byte anchor before full comparisons. Cancellable and step-limited searches retain their incremental path.
+
+### Compatibility
+- The package release version advances to `1.1.0`; the public C ABI and CDIN Spec remain at `1.0.0`. The search optimization does not change the public ABI or result-range semantics.
+
 ## [1.0.0] - 2026-10-20
 
 Stable C ABI 1.0.0 release, synchronized with the CDIN Spec 1.0.0 architecture baseline.
@@ -61,16 +77,6 @@ Stable C ABI 1.0.0 release, synchronized with the CDIN Spec 1.0.0 architecture b
   and `docs/limits-and-status.md` for ABI constraints, unsupported behavior, and
   documented limitations.
 
-## [Unreleased]
-
-### Improved — forward plain-text search
-
-- Linux uses the C library's optimized `memmem` path for byte-exact forward
-  searches when there is no cancellation callback and the step budget covers
-  the full candidate window. Step-limited and cancellable operations retain the
-  incremental path.
-- Other platforms use a portable selective-byte anchor before full comparisons.
-  No public ABI or result-range semantics changed.
 
 ### Changed - P7: layered source tree, full gate green
 

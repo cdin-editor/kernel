@@ -1,0 +1,16 @@
+.git
+.gix
+.github
+build
+stage
+dist
+node_modules
+*.rar
+*.zip
+*.tar.gz
+*.sha256
+*.o
+*.a
+*.so
+*.dylib
+*.dll

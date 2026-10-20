@@ -5,7 +5,7 @@
 #ifndef RUNNER_STATE_H
 #define RUNNER_STATE_H
 
-#include "cdin/kernel.h"
+#include <cdin/kernel.h>
 #include "alloc_strict.h"
 #include <stddef.h>
 #include <stdint.h>

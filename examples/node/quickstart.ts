@@ -1,4 +1,7 @@
-// TypeScript variant of quickstart.mjs; runtime FFI behavior is still provided by Koffi.
+/**
+ * TypeScript variant of quickstart.mjs. Koffi still provides the runtime FFI;
+ * TypeScript adds static types around the same native declarations.
+ */
 import koffi from 'koffi';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';

@@ -1,30 +1,33 @@
-/* cdin-kernel internals. Not a public header: nothing outside src/ may include it.
+/**
+ * @file internal.h
+ * @brief Private declarations shared by cdin-kernel implementation modules.
  *
- * Ownership and locking (ARCH-013, cdin AGENTS section 6):
- *  - every piece of mutable state lives inside struct cdin_kernel;
- *  - every public entry point takes the kernel lock (cdin_lock_vtable) for its
- *    whole duration, except the middle part of cdin_search, which works on a
- *    ref-counted immutable text block;
- *  - text blocks are mutated in place only while refs == 1 (copy-on-write);
- *  - callbacks run after the lock is released (struct wake_list).
+ * Do not include this header from applications. The supported public interface
+ * is `include/cdin/kernel.h`.
  *
- * Layout (the layering the src/ tree implements):
- *   util/    allocator, UTF-8 mechanics, Unicode tables, checked sizes
- *   core/    content block (COW, refcounted), generic handle pool
- *   text/    pure functions on (bytes, len): lines, positions, graphemes
- *   search/  pure scan + case folding
- *   history/ undo unit bookkeeping (cap, eviction, clean marker, coalesce)
- *   doc/     document table, close/reload/snapshots, the only content-mutation
- *            entry points (edit.c/commit), transactions read-side in txn/
- *   txn/     transaction lifecycle
- *   notif/   events, bounded per-subscriber rings, wake lists
- *   api/     public wrappers: one file per header function group
- *   kernel.c kernel lifecycle: create/destroy/shutdown + version queries
+ * Ownership and locking:
+ * - Mutable kernel state belongs to `struct cdin_kernel`.
+ * - Public entry points normally hold the kernel lock for their full operation.
+ *   The search implementation may release it while scanning a pinned,
+ *   reference-counted immutable text block.
+ * - A text block is modified in place only when its reference count is one;
+ *   otherwise edits use copy-on-write.
+ * - Wakeup and logging callbacks run after the kernel lock is released.
+ *
+ * Source layout:
+ * - `util/`: allocation helpers, checked sizes, UTF-8, and Unicode tables.
+ * - `core/`: reference-counted text blocks and reusable handle tables.
+ * - `text/`: line indexing, position conversion, and grapheme boundaries.
+ * - `search/`: literal/byte search and case folding.
+ * - `history/`: undo records, limits, eviction, and clean-state tracking.
+ * - `doc/`, `txn/`, `notif/`: document, transaction, and notification state.
+ * - `api/`: public entry-point wrappers grouped by API family.
+ * - `kernel.c`: kernel creation, destruction, shutdown, and version queries.
  */
 #ifndef CDIN_INTERNAL_H
 #define CDIN_INTERNAL_H
 
-#include "cdin/kernel.h"
+#include <cdin/kernel.h>
 #include "util/unicode_tables.h"
 #include <stddef.h>
 #include <stdint.h>

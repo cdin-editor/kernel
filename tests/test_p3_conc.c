@@ -11,7 +11,7 @@
  * The load allocator is the shared harness one, so every test also ends with
  * zero violations and zero live blocks.
  */
-#include "cdin/kernel.h"
+#include <cdin/kernel.h>
 #include "alloc_strict.h"
 
 #include <stdio.h>

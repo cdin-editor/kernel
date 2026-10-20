@@ -1,7 +1,7 @@
 /* Micro-benchmarks. Numbers are indicative only (one machine, no pinning); they exist to expose
  * complexity problems (EDIT-014, SEARCH-013), not to certify speed. Run: make bench */
 #define _POSIX_C_SOURCE 200809L
-#include "cdin/kernel.h"
+#include <cdin/kernel.h>
 #include "support/strict_alloc.h"
 #include <stdio.h>
 #include <stdlib.h>

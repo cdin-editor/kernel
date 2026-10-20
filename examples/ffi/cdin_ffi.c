@@ -1,3 +1,7 @@
+/**
+ * @file cdin_ffi.c
+ * @brief Implementation of the small bridge used by the language examples.
+ */
 #include "cdin_ffi.h"
 
 #include <stdlib.h>

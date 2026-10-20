@@ -1,7 +1,7 @@
 /* Fuzz target: public API inputs. Document bytes and request coordinates are
  * arbitrary; all requests use the stable public ABI (not private internals).
  * Run under libFuzzer + ASan/UBSan. */
-#include "cdin/kernel.h"
+#include <cdin/kernel.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>

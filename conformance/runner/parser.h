@@ -4,7 +4,7 @@
 #ifndef PARSER_H
 #define PARSER_H
 
-#include "cdin/kernel.h"
+#include <cdin/kernel.h>
 #include <stddef.h>
 #include <stdint.h>
 

@@ -2,7 +2,7 @@
  * Benchmark: all operations.
  * Usage: bench_all <document_size_mb>
  */
-#include "cdin/kernel.h"
+#include <cdin/kernel.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
