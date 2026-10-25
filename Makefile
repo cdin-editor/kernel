@@ -260,6 +260,10 @@ $(BENCH): bench/bench.c $(LIB) support/strict_alloc.o
 $(BENCH_SCALE): bench/bench_scale.c $(LIB)
 	$(CC) $(CFLAGS) $(LDFLAGS) bench/bench_scale.c -Iinclude $(LIB) $(LDLIBS) -o $@
 
+# Default benchmark suite.
+bench: $(BENCH)
+	$(BENCH)
+
 # Large-document benchmark; examples: make bench-scale SIZE_MIB=125 (or 500 / 1024)
 SIZE_MIB ?= 125
 bench-scale: $(BENCH_SCALE)

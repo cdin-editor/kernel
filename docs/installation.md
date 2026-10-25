@@ -1,124 +1,224 @@
-# Installation and packaging
+# Installation and build
 
-`cdin-kernel` provides a C11 source build, a static library, a shared library, a public header, and a `pkg-config` file. The C ABI is stable at **1.0.0** and is synchronized with CDIN Spec 1.0.0. ABI major 1 freezes public struct layouts, fixed-width enum-like fields, constants and prototypes for the supported target C ABI; build bindings against the shipped header and query the loaded ABI version at startup.
+This document explains how to build `cdin-kernel` from source, install it,
+link applications against the static or shared library, and how the release
+packages are produced and consumed.
 
-## Build and test
+The library runtime has **no external dependencies**. The build needs only a
+C11 toolchain, GNU `make`, and the archiver tools; `awk`, `sed`, and an
+install binary are required only by specific targets (packaging, install,
+sanitizer runs need a POSIX shell).
 
-From the repository root:
+## 1. Supported platforms
+
+| Platform | Toolchain | Notes |
+|---|---|---|
+| Linux x86-64, arm64 | gcc or clang, glibc or musl | Full build incl. sanitizers; `-pthread` is used by the test suite only. |
+| macOS x86-64 / arm64 | Apple clang | Shared library uses `@rpath`; see 5. |
+| Windows x86-64 | MinGW-w64 (GCC) under MSYS2 UCRT64 | Produces `cdin_kernel.dll` + import lib. MSVC is not supported. |
+
+The header and static library are portable C11 with no platform-specific
+calls; any conforming compiler on any POSIX or Win32 target can consume them.
+
+## 2. Build from source
+
+### 2.1 Linux and macOS
 
 ```sh
-make clean
+sudo apt-get install build-essential pkg-config   # Debian/Ubuntu example
+make all shared quickstart                        # build everything
+make check                                        # run all gates
+sudo make install                                 # default PREFIX=/usr/local
+```
+
+### 2.2 Windows (MSYS2 UCRT64)
+
+```sh
+pacman -S --needed make mingw-w64-ucrt-x86_64-gcc
 make all shared quickstart
 make check
+make install PREFIX=/ucrt64/local        # or any MSYS path
 ```
 
-`make all` builds `build/libcdin_kernel.a`. `make shared` builds the platform library (`.so`, `.dylib`, or `.dll`) and import library where applicable. `make check` runs the conformance vectors and C regression/concurrency tests. The `examples/ffi/` bridge is optional and is not part of the core ABI.
-
-## Install to a prefix
-
-On Linux and macOS, install to the default `/usr/local` prefix (permission to write there may be required):
+Outside MSYS2 (a native shell), set `CC`, `AR`, and `RANLIB` if the defaults
+are not on `PATH`:
 
 ```sh
-make all shared
-sudo make install
+make CC=C:/ProgramData/mingw64/mingw64/bin/gcc.exe \
+     AR=C:/ProgramData/mingw64/mingw64/bin/ar.exe \
+     RANLIB=C:/ProgramData/mingw64/mingw64/bin/ranlib.exe
 ```
 
-For an unprivileged, project-local install, use a prefix owned by your user:
+`make` detects a Windows host by `OS=Windows_NT` and the `uname` output, so
+POSIX shell logic is skipped for cmd.exe; MSYS2/UCRT64 shells behave like
+POSIX. Never run two `make` invocations on the same checkout concurrently
+(for example from two terminals): object files can interleave and corrupt the
+link step. `make clean && make` recovers.
+
+### 2.3 Make targets
+
+| Target | Produces | Description |
+|---|---|---|
+| `all` | `build/libcdin_kernel.a` | Static library only. |
+| `shared` | `build/cdin_kernel.dll` (+ `.dll.a`) / `libcdin_kernel.so(.MAJOR)` / `.dylib` | Shared library with symbol visibility. |
+| `ffi-shared` | `build/cdin_ffi.dll` `libcdin_ffi.so` | Optional demo bridge used by the language-binding examples. |
+| `quickstart` | runs `build/quickstart` | Builds and executes the C example. |
+| `check` | - | `check-vectors` + `check-tests`; the full quality gate. |
+| `check-vectors` | - | Run every conformance vector, one process per file; stop on first failure. |
+| `vectors` | - | Run every vector and report all failures (no early exit). |
+| `check-tests` | - | Run `test_p1` and `test_p3_conc`. |
+| `tests` | - | Alias of `check-tests`. |
+| `asan` | - | Clean rebuild with ASan+UBSan, then the full vector+test set. |
+| `tsan` | - | The same with the thread sanitizer. |
+| `bench` | `build/bench` + run | Default benchmark table. |
+| `bench-scale` | `build/bench-scale` + run | Large-document benchmark; `make bench-scale SIZE_MIB=125` (also 500, 1024). |
+| `fuzz-build` | `build/fuzz_*` | libFuzzer-based harnesses; requires clang. |
+| `trace` | stdout | Requirement-id traceability table derived from the vectors. |
+| `install` / `uninstall` | - | Install header + libraries + pkg-config (see 4). |
+| `clean` | - | Remove intermediate objects and outputs. |
+
+Build variables: `CC`, `AR`, `RANLIB` (toolchain), `CFLAGS`, `LDFLAGS`,
+`LDLIBS` (override defaults), `PREFIX`, `DESTDIR` (installation layout),
+`SIZE_MIB` (bench-scale input), `STANDALONE=1` (fuzz driver without
+libFuzzer).
+
+## 3. Build artifacts
+
+| File | What it is |
+|---|---|
+| `build/libcdin_kernel.a` | static library for linking |
+| `build/cdin_kernel.dll` + `build/libcdin_kernel.dll.a` | Windows DLL + import library |
+| `build/libcdin_kernel.so.$(ABI_MAJOR)` (+ unversioned link) | Linux shared library with stable soname |
+| `build/libcdin_kernel.dylib` (+ `.MAJOR` link) | macOS shared library |
+| `build/conformance-runner` | vector runner (not installed) |
+| `build/test_p1`, `build/test_p3_conc` | regression tests (not installed) |
+| `build/bench`, `build/bench-scale`, `build/fuzz_ops` | performance and fuzz helpers (not installed) |
+
+The `.pc` file generated by `make install` contains the ABI version so that
+`pkg-config` consumers always see the installed version.
+
+## 4. Install layout
 
 ```sh
-make all shared
-make PREFIX="$HOME/.local" install
+make install [PREFIX=/your/prefix] [DESTDIR=/staging]
 ```
 
-The installation contains:
+| Destination | Content |
+|---|---|
+| `$(PREFIX)/include/cdin/kernel.h` | the single public header |
+| `$(PREFIX)/lib/libcdin_kernel.a` | static library |
+| `$(PREFIX)/lib/libcdin_kernel.so.$(M)` `.$(MAJOR)` `libcdin_kernel.so` | Linux shared chain (three names) |
+| `$(PREFIX)/bin/cdin_kernel.dll`, `lib` import lib | Windows layout |
+| `$(PREFIX)/lib/pkgconfig/cdin-kernel.pc` | `pkg-config` metadata |
 
-- `include/cdin/kernel.h` — the only public core header;
-- `lib/libcdin_kernel.a` — static library;
-- a versioned shared library and linker symlink(s) on Linux/macOS;
-- `lib/pkgconfig/cdin-kernel.pc` — `pkg-config` metadata;
-- on Windows, `bin/cdin_kernel.dll` and `lib/libcdin_kernel.dll.a` alongside the static library.
+`DESTDIR` supports staging (`DESTDIR=/tmp/stage make install`); paths written
+into `cdin-kernel.pc` still use `PREFIX`, which is standard for package
+builders.
 
-The install recipe supports `DESTDIR` for package staging. This is useful for package managers and does **not** write into the real system directories:
+## 5. Linking an application
 
-```sh
-make DESTDIR="$PWD/stage" PREFIX=/usr/local install
-```
-
-The staged files will be under `stage/usr/local/`. Remove only the files installed by this project with `make PREFIX="$HOME/.local" uninstall` (use the same `PREFIX`, `includedir`, `libdir`, `bindir`, and `DESTDIR` values used during installation).
-
-## Windows with MSYS2 UCRT64
-
-Use the UCRT64 shell and a MinGW-w64 GCC toolchain; do not build the Windows library with a Linux compiler. For example:
-
-```sh
-make clean
-make CC=gcc all shared quickstart
-make CC=gcc check
-make CC=gcc PREFIX=/ucrt64 install
-```
-
-The Windows shared library is `bin/cdin_kernel.dll`; link-time consumers use `lib/libcdin_kernel.dll.a`. The static library is `lib/libcdin_kernel.a`. Keep the DLL beside your consuming executable or somewhere on the Windows DLL search path.
-
-## Link from a C project
-
-A static link can use the header and archive directly:
-
-```sh
-cc -std=c11 -I"$HOME/.local/include" app.c \
-  "$HOME/.local/lib/libcdin_kernel.a" -o app
-```
-
-For a shared-library consumer, use the platform linker/rpath conventions for your install prefix. With `pkg-config` installed, query the exported flags with:
-
-```sh
-pkg-config --cflags --libs cdin-kernel
-```
-
-The package's `.pc` file is relocatable with the installed `include/` and `lib/` layout. On Windows, use the UCRT64 `pkg-config`/`pkgconf` environment and keep `bin/` available for DLL loading.
-
-## Verify an installed copy
-
-CI stages an installation under a temporary prefix, then compiles and runs the example twice: once against the installed static archive and once against the installed shared library/import library. The same check can be run locally:
-
-```sh
-make DESTDIR="$PWD/build/stage" PREFIX=/cdin install
-STAGED_PREFIX="$PWD/build/stage/cdin"
-CC=cc scripts/verify-installed.sh "$STAGED_PREFIX"
-```
-
-The smoke test verifies the installed header and linker artifacts, loads the shared library at runtime, and checks the consumer's observable output. It does not by itself establish full ABI compatibility or replace the test suite.
-
-## Release archives
-
-Each GitHub Release provides one archive per supported runner: Linux x86-64 (`.tar.gz`), macOS (`.tar.gz`), and Windows x86-64 with MinGW-w64 UCRT64 (`.zip`). Each archive includes the public header, static library, shared library/import files where supported, `pkg-config` metadata, docs, quickstart example, build information, and an installer (`install.sh` for Linux/macOS or `install.ps1` for Windows). An adjacent `.sha256` file is published for each archive.
-
-For Linux/macOS, extract the `.tar.gz` and run `./install.sh`; by default it installs to `~/.local` without requiring root. Use `./install.sh --prefix /path/to/prefix` to choose a destination. For a system-wide install, choose a system prefix and use the appropriate privileges.
-
-For Windows, extract the `.zip`, open PowerShell in the extracted directory, and run `./install.ps1`. The default destination is `%LOCALAPPDATA%\cdin-kernel`; `-Prefix` changes it and `-AddBinToUserPath` optionally adds the DLL directory to the user's PATH. The Windows package targets MinGW-w64 UCRT64 and does not claim MSVC ABI compatibility.
-
-`BUILD-INFO.txt` records both the package version and the C ABI version. They are tracked separately; for this stable release, package version and C ABI version both default to `1.0.0` (they remain separately recorded so a future package-only release can intentionally differ). Release packages are attached to the GitHub Release only after the source tests, installed-consumer smoke test, and archive-install test pass on the runner that built each artifact.
-
-## Docker SDK image
-
-The Docker image is a development SDK for applications that need to compile and link against `cdin-kernel`. It contains the installed public header, static and shared libraries, GCC, Make, and `pkg-config`. It is published for `linux/amd64` and `linux/arm64`; it is not intended to be the final runtime image for an application.
-
-Replace `bitsgenix` with the Docker Hub account used by this project:
-
-```sh
-docker pull bitsgenix/cdin-kernel:latest
-docker run --rm -it -v "$PWD:/workspace" bitsgenix/cdin-kernel:latest
-```
-
-Inside the container, compile a consumer using the installed metadata:
+### 5.1 Static
 
 ```sh
 cc app.c $(pkg-config --cflags --libs cdin-kernel) -o app
 ```
 
-To publish the image from GitHub Actions, add these repository secrets:
+Manual flags, no pkg-config:
 
-- `DOCKER_USERNAME` — Docker Hub username and image namespace.
-- `DOCKER_TOKEN` — a Docker Hub access token with permission to push to the account.
+```sh
+cc -std=c11 -I/usr/local/include app.c /usr/local/lib/libcdin_kernel.a -o app
+```
 
-The release workflow publishes the image after a tagged GitHub Release succeeds. Version tags are derived from the `vMAJOR.MINOR.PATCH` release tag; stable releases also update `latest`. The build tests the library for each target architecture before publishing the image.
+Windows (MinGW):
 
+```sh
+cc -std=c11 -I"C:/msys64/ucrt64/local/include" app.c \
+   "C:/msys64/ucrt64/local/lib/libcdin_kernel.a" -o app.exe
+```
+
+Additional link flags are not required; the library is self-contained.
+
+### 5.2 Shared
+
+Linking works identically through `pkg-config` (`-lcdin_kernel` resolves the
+import/soname library). Two runtime notes:
+
+- Linux: the installed soname is `libcdin_kernel.so.$(ABI_MAJOR)`; the
+  unversioned name is the development symlink. RPATH or `ldconfig` decides
+  where the loader finds it, as usual.
+- Windows: `cdin_kernel.dll` must be on the executable's search path (same
+  directory, or `PATH`) in addition to having the import lib at link time.
+
+### 5.3 Embedding without install
+
+For vendored sources, include the repository in your build, or add the
+checkout to your `CMakeLists.txt` / build system as a static library target
+and `add_include_directories(kernel/include)`. There is no required
+generated-code step; the library is built from the C sources directly.
+
+## 6. Release packages
+
+`packaging/RELEASE-INSTALL.md` documents the archive layout. Packages contain
+the header, static and shared libraries, the pkg-config file, the example
+programs, this documentation (`docs/` at the root and under
+`share/cdin-kernel/`), `INSTALL.md`, `BUILD-INFO.txt` (which records the
+package release version separately from the C ABI version), and an installer
+script per platform:
+
+```sh
+# Linux/macOS archive
+./install.sh --prefix "$HOME/.local"
+# Windows archive (run in PowerShell)
+./install.ps1 -Prefix "C:\Users\me\cdin" -AddBinToUserPath
+```
+
+Each release asset has a matching `.sha256` checksum file; verify before
+unpacking and running the installer.
+
+## 7. Container builds
+
+The project publishes a container image containing the header, static and
+shared libraries, GCC, Make, and pkg-config, so an editor project can compile
+against the kernel without installing a toolchain locally. Mount your project
+and compile inside it:
+
+```sh
+docker run --rm -v "$PWD:/workspace" -w /workspace \
+    <registry>/<cdin-sdk-image> \
+    cc app.c $(pkg-config --cflags --libs cdin-kernel) -o app
+```
+
+Consult the project README for the current image name; the image is built
+from this same source tree, so its ABI version matches the release it was
+built from.
+
+## 8. Verify an installation
+
+```sh
+pkg-config --modversion cdin-kernel        # expected ABI version triple
+cc quick.c $(pkg-config --cflags --libs cdin-kernel) -o quick && ./quick
+```
+
+A green run prints `version=1 length=11` and the edited document text; if
+`pkg-config` is not used, the compile line from 5.1 works.
+
+## 9. Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `make: awk: not found` (or missing version in `.pc`) | POSIX tools missing on PATH (Windows native shells often lack awk) | Use MSYS2/UCRT64 shell for packaging-related targets; otherwise awk is only needed for `install` and pkg-config generation. |
+| `undefined reference to cdin_*` at link | wrong library arch (32/64) or old stale `.a` linking | Rebuild with `make clean && make`; verify arch with `gcc -dumpmachine`. |
+| Program exits with `DLL not found` on Windows | DLL not on the executable's PATH | Copy `cdin_kernel.dll` beside the exe or extend PATH. |
+| Multiple `make` runs corrupt objects | parallel builds in one checkout | `make clean && make`; serialize invocations. |
+| MSVC errors about `__declspec` | MSVC is not a supported build target | Use MinGW-w64; link the produced import lib from other languages via C ABI only. |
+| pkg-config reports the wrong prefix | staged DESTDIR install but runtime pc copied somewhere else | use the `PREFIX` passed at install time for `PKG_CONFIG_PATH`. |
+
+## 10. NOT RUN
+
+This documentation was verified by running `make check` (18 vector files,
+105 vectors, all pass; P1 12 checks, P3 10 checks), `make quickstart`
+(expected output), and `make bench` on a Windows/MinGW host. The following
+were *not* exercised while writing this document and are documented from the
+Makefile and packaging scripts, not from an observed run: a clean
+`make install` into a fresh prefix, release-packaging script execution,
+container image builds, libFuzzer (`fuzz-build`), and macOS-specific linking.

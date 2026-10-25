@@ -54,9 +54,9 @@ Required keys are listed without brackets in the vector grammar. An unknown or d
 | `create` | `allocator=<name> [max_documents] [max_document_size] [max_undo] [max_blob]` | Create a kernel |
 | `destroy` | `handle=<name>` | Destroy a kernel |
 | `fail_alloc_after` | `allocator=<name> n=<number>` | Fail the named allocator's Nth allocation |
-| `abi_version` | — | Query ABI version |
-| `features` | — | Query advertised feature mask |
-| `unicode_version` | — | Query embedded Unicode-data version |
+| `abi_version` | - | Query ABI version |
+| `features` | - | Query advertised feature mask |
+| `unicode_version` | - | Query embedded Unicode-data version |
 | `create_doc` | `[bytes="<bytes>"]` | Create a document (empty by default) |
 | `close_doc` | `handle=<name>` | Close a document |
 | `version` / `len` | `handle=<name>` | Query version / byte length |
@@ -91,7 +91,7 @@ vector abi.basic covers ABI-001 ABI-006 ABI-014 ABI-017 KERNEL-008 ERR-001 ERR-0
   create allocator=counting
   expect CDIN_OK
   abi_version
-  expect CDIN_OK major=0 minor=2 patch=0
+  expect CDIN_OK major=1 minor=0 patch=0
   features
   expect CDIN_OK
   destroy handle=k1

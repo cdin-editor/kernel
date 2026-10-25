@@ -2,7 +2,7 @@
  * Pinned Unicode version: 15.1.0.
  * Data source: Python unicodedata (case folding, assignment) and the `regex`
  * module (GCB, Extended_Pictographic, InCB). NOT generated from the official
- * UCD files; see the header of tools/gen_unicode.py and docs/limits-and-status.md. */
+ * UCD files; see the header of tools/gen_unicode.py and docs/abi.md. */
 #include "unicode_tables.h"
 
 const unsigned cdin_unicode_major = 15u, cdin_unicode_minor = 1u, cdin_unicode_patch = 0u;

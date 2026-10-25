@@ -2,7 +2,7 @@
  *
  * Driven by the pinned generated table; ASCII is the fast path because it
  * covers the overwhelming majority of patterns. Full Unicode folding with
- * normalisation and language profiles is not in this release (docs/limits-and-status.md). */
+ * normalisation and language profiles is not in this release (docs/user-guide.md, section 12). */
 #include "internal.h"
 
 uint32_t fold_simple(uint32_t cp)

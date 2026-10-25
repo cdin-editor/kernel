@@ -21,7 +21,7 @@ After installation, compile a program with `pkg-config`:
 cc app.c $(pkg-config --cflags --libs cdin-kernel) -o app
 ```
 
-See [Getting started](docs/getting-started.md) for a complete example and [Installation](docs/installation.md) for static/shared linking, custom prefixes, and release packages.
+See the [user guide](docs/user-guide.md) for a complete example and [installation](docs/installation.md) for static/shared linking, custom prefixes, and release packages.
 
 ## Build instructions
 
@@ -71,7 +71,7 @@ docker pull bitsgenix/cdin-kernel:latest
 docker run --rm -it -v "$PWD:/workspace" bitsgenix/cdin-kernel:latest
 ```
 
-The image includes the public header, static/shared libraries, GCC, Make, and `pkg-config`. Use it as a build environment for applications that link against `cdin-kernel`; it is not an application image. See [Docker usage](docs/installation.md#docker-sdk-image).
+The image includes the public header, static/shared libraries, GCC, Make, and `pkg-config`. Use it as a build environment for applications that link against `cdin-kernel`; it is not an application image. See [Container builds](docs/installation.md#7-container-builds).
 
 ## Examples and documentation
 
@@ -79,8 +79,8 @@ The image includes the public header, static/shared libraries, GCC, Make, and `p
 - [C quickstart](examples/c/quickstart.c)
 - [User guide](docs/user-guide.md)
 - [C ABI reference](docs/abi.md)
-- [Python, Go, JavaScript, and TypeScript examples](docs/language-bindings.md)
-- [Limits and status codes](docs/limits-and-status.md)
+- [Language bindings](docs/language-bindings.md)
+- [Installation and build](docs/installation.md)
 - [Architecture](docs/architecture.md)
 - [Developer guide](docs/development.md)
 

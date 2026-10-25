@@ -8,7 +8,7 @@ cdin_status cdin_txn_begin(cdin_kernel *k, cdin_doc d, const cdin_txn_begin_requ
     cdin_status st;
     if (!k || !out) return CDIN_INVALID_ARGUMENT;
     k_lock(k);
-    st = doc_lookup(k, d, &dd);
+    st = doc_lookup_mut(k, d, &dd);
     if (st == CDIN_OK) st = txn_begin_locked(k, dd, req, out);
     k_unlock(k);
     return st;

@@ -1,164 +1,190 @@
-# Language bindings: Python, Go, JavaScript, and TypeScript
+# Language bindings
 
-The kernel's supported public boundary is a **native C ABI** described by [`include/cdin/kernel.h`](../include/cdin/kernel.h). The ABI is stable at `1.0.0`; ship the library, matching header, and bindings as one versioned unit, and query `cdin_abi_version` on startup. The examples below use the small bridge in `examples/ffi/` because it hides the allocator callback and the nested configuration structs. That bridge is sample code, **not part of the public kernel ABI**.
+`cdin-kernel` is a C11 library with a frozen C ABI. Any runtime that can call
+a C shared library can use it. This document first states the rules that
+apply to every binding, then walks through Python, Go, JavaScript/TypeScript,
+C++, and the checklist for other languages.
 
-## Choose your integration
+Two integration routes exist:
 
-| Language | Recommended starting point | Notes |
+1. **Direct C ABI.** Declare each function and struct exactly as the header
+   defines them. Required when you need features the bridge does not wrap:
+   transactions, snapshots, notifications, search, undo, text helpers.
+2. **The example bridge (`cdin_ffi`).** A small C shim in
+   `examples/ffi/` that installs a standard allocator and exposes a few
+   scalar operations. It exists so a binding can be written in minutes; it
+   is sample code, not part of the stable ABI. Extend it freely in your own
+   tree.
+
+Route 1 is the production answer; route 2 is the tutorial answer. The
+concepts below are identical for both.
+
+## 1. Rules every binding must follow
+
+| Rule | Why |
+|---|---|
+| Pass bytes as pointer + length. Never rely on NUL termination. | Documents are byte sequences; NUL inside is normal. |
+| Handles are opaque `uint64`/`BigInt`. Treat them as tokens. | Types are separate namespaces; a doc handle in a `cdin_notif` slot fails with `CDIN_INVALID_HANDLE` (or, worse, could address another object's slot numerically). Keep them distinct in your API layer. |
+| Set `struct_size` on every request/output struct you pass. | The struct-size protocol rejects unknown shapes (see the ABI reference). |
+| Statuses: `CDIN_OK == 0`. Check every call. | One missed `STALE_VERSION` becomes silent data loss. |
+| Zero your request structs before setting fields. | Reserved fields must be 0. |
+| Keep callbacks and their contexts alive for the kernel's lifetime. | The kernel stores pointers, not copies, of allocator/lock/wakeup callbacks. |
+| Callbacks must not re-enter the kernel. | Allocator runs under the caller's lock; re-entry deadlocks non-recursive locks. |
+| One thread at a time, or a lock vtable. | See the threading section of the user guide. For a runtime with its own scheduler (JS), call the kernel from a single dedicated thread or provide a mutex via native code. |
+| Buffers you pass in are yours; the library copies out-of everything it needs. | Free caller memory as soon as a call returns; the kernel owns its own storage. |
+| Manage `close`/`destroy` order explicitly in destructors or finalizers. | The kernel does not track who calls it; there is no reanimation of closed handles. |
+
+## 2. The compiled artifacts
+
+| File | Purpose |
+|---|---|
+| `build/libcdin_kernel.a` / `.so` / `.dylib` | The kernel. This is the target of any direct-ABI binding. |
+| `build/cdin_kernel.dll` | Same, Windows. |
+| `build/libcdin_ffi.so` / `.dylib` / `cdin_ffi.dll` | Example bridge; built by `make ffi-shared`. |
+
+Package managers usually want the **kernel** library itself. The bridge is a
+single small C file you can vendor into your binding if you prefer.
+
+## 3. Python (ctypes)
+
+The repository ships `examples/python/quickstart.py`, which loads
+`cdin_ffi` and exercises the bridge. The same structure works when loading
+`libcdin_kernel.so` directly.
+
+```python
+import ctypes, os, sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+lib = ctypes.CDLL(str(ROOT / "build" / "libcdin_kernel.so"))  # dylib/dll name by platform
+CDIN_OK = 0
+
+kernel_create = lib.cdin_ffi_kernel_create                 # bridge variant
+kernel_create.argtypes = [ctypes.POINTER(ctypes.c_void_p)]
+kernel_create.restype = ctypes.c_int
+
+status_name = lib.cdin_ffi_status_name
+status_name.argtypes = [ctypes.c_int]
+status_name.restype = ctypes.c_char_p
+```
+
+For the *direct* ABI, there are two obstacles that decide whether you bind
+the kernel itself or write a shim:
+
+1. **Allocator callbacks.** `cdin_kernel_create` requires a `cdin_allocator`
+   whose three C callbacks never go away. In ctypes you can construct the
+   struct with `CFUNCTYPE` fields backed by `libc` calls
+   (`ctypes.CDLL(None)`), but the callbacks must call `malloc`/`realloc`
+   through pointers you keep referenced for the process lifetime, and they
+   must not raise. This is mechanical but easy to get subtly wrong.
+2. **`cdin_source` is passed by value.** FFI layers differ in
+   struct-by-value support. ctypes can wrap it in a small class but the
+   concrete calling convention is platform-specific; a 10-line C shim that
+   takes two `uint64` arguments is the robust answer.
+
+Recommendation for a production Python binding: vendor a ~30-line C shim
+(modeled on `examples/ffi/cdin_ffi.c`) that exposes exactly the operations
+your editor needs, then bind only scalars in ctypes. This keeps the ABI
+interesting parts in C where they compile without guesswork.
+
+## 4. Go (cgo)
+
+`examples/go/main.go` is a complete program. The pattern, condensed:
+
+```go
+/*
+#cgo CFLAGS: -I${SRCDIR}/../ffi -I${SRCDIR}/../../include
+#cgo LDFLAGS: -L${SRCDIR}/../../build -lcdin_ffi -Wl,-rpath,${SRCDIR}/../../build
+#include <stdlib.h>
+#include "cdin_ffi.h"
+*/
+import "C"
+
+func check(status C.cdin_status) error {
+    if status == C.CDIN_OK {
+        return nil
+    }
+    return fmt.Errorf("cdin: %s", C.GoString(C.cdin_ffi_status_name(status)))
+}
+```
+
+Notes:
+
+- `C.CBytes` / `C.GoStringN` are the boundary: copy on the way in and on the
+  way out, then `C.free` what you handed to C. The kernel copies again
+  internally, so the Go byte slice may be reused immediately after a call.
+- Call sites are synchronous in the C sense; the Go scheduler expects cgo
+  calls that do not block indefinitely. All kernel calls are bounded and
+  non-blocking except a search that you gave a huge step budget to.
+- The `-rpath` in `LDFLAGS` is for the example; a packaged binding should
+  link with `-L` and a runtime path policy you control.
+- Never hold `C.CBytes`-allocated memory across awaits; cgo pins it.
+
+## 5. JavaScript / TypeScript (koffi)
+
+`examples/node/quickstart.mjs` (plain JS) and `quickstart.ts` (types) load
+`libcdin_ffi` with [`koffi`](https://koffi.dev). The kernel's public ABI is
+also directly usable because every entry point is `CDECL` free of inline
+structs by value except `cdin_source` in read helpers; the bridge avoids even
+that.
+
+```js
+import koffi from 'koffi';
+const lib = koffi.load('build/libcdin_ffi.so');   // dylib/dll by platform
+
+const docCreate = lib.func('int cdin_ffi_doc_create(void *kernel, const uint8_t *bytes, size_t len, _Out_ uint64_t *out_doc)');
+const docReplace = lib.func('int cdin_ffi_doc_replace(void *kernel, uint64_t doc, uint64_t expected_version, uint64_t start, uint64_t end, const uint8_t *bytes, size_t len, _Out_ uint64_t *out_new_version)');
+const docRead = lib.func('int cdin_ffi_doc_read(void *kernel, uint64_t doc, _Out_ uint8_t *buf, size_t capacity, _Out_ size_t *out_len)');
+```
+
+- `Buffer` instances map to `const uint8_t *`; pass `Buffer.byteLength` for
+  length. The kernel copies the bytes before returning, so a `Buffer` can be
+  GC'd afterwards.
+- 64-bit handles are `BigInt` (`0n` check against `CDIN_OK == 0n`).
+- Arrays passed for `_Out_` must be exactly `[initialValue]`; koffi writes
+  back through the reference.
+- Buffers passed for `_Out_ uint8_t *` are allocated by you; the read
+  pattern is: call with `null` and capacity `0` to learn the size, allocate
+  exactly, call again.
+
+## 6. C and C++
+
+The header works with a plain C compiler and as C++ (it wraps everything in
+`extern "C"`). A C++ application should:
+
+- include `<cdin/kernel.h>`,
+- wrap the kernel handle in an RAII type whose destructor calls
+  `cdin_kernel_destroy`,
+- keep the allocator/lock objects and their contexts alive at least as long
+  as the kernel.
+
+No exceptions and no templates cross the ABI; everything stays POD.
+
+## 7. Other languages (checklist)
+
+| Language | Technique | Notes |
 |---|---|---|
-| C / C++ | Include `cdin/kernel.h`; link `libcdin_kernel` | Use the direct ABI and provide allocator callbacks. C++ callers should include the C header in a C-compatible context; exported API is `extern "C"`. |
-| Python | `ctypes` + `examples/ffi/cdin_ffi.h` | No generated extension is needed. Use explicit `argtypes` and `restype`; byte buffers must outlive the call. |
-| Go | `cgo` + bridge | `cgo` needs a C compiler and the native library. Copy Go byte slices into C memory for the duration of the call; never retain a Go pointer in the kernel. |
-| JavaScript | Node.js + Koffi | Koffi loads the native shared library and supports C-style declarations. Use `Buffer` for byte strings, not JS strings, when exact bytes matter. |
-| TypeScript | Node.js + Koffi, with TS types around the JS wrapper | TypeScript types do not change the native ABI. Keep `bigint` for `uint64_t` values and use the same runtime bindings as JavaScript. |
-| Other languages | Any FFI that can call C | The bridge deliberately uses scalar arguments, `void *`, integer handles, and byte pointers. The platform ABI and pointer width still matter. |
+| Rust | `bindgen` on `include/cdin/kernel.h` (or `cdin_ffi.h`) | Opaque kernel pointer as `ExternalApi`; keep allocator callbacks `'static`. |
+| Zig | `@cImport` of `kernel.h` | Direct ABI works; watch for `size_t` vs `usize` conversions. |
+| C#/.NET | `DllImport` with Blittable structs | The `cdin_source`-by-value helpers need a C shim; everything else binds directly. `[SkipLocalsInit]`-style zeroing is unnecessary: explicit `Marshal.StructureToPtr` paths with `struct_size` set are the safe pattern. |
+| Java (Panama) | `downcall` with explicit layouts | Wrap the allocator callbacks into `upcall stubs` whose lifetime equals the kernel's. |
 
-## 1. Build the native libraries
+General rule: the safest minimal version of a binding for a language is an
+explicit `manifest` of the handful of entry points you need, not an
+auto-complete mapping of the header. That is what the bridge examples in
+`examples/` are.
 
-From the repository root:
+## 8. Testing a binding
 
-```sh
-make                 # static core: build/libcdin_kernel.a
-make shared          # shared core: build/libcdin_kernel.so or platform equivalent
-make ffi-shared      # shared core + optional bridge: build/libcdin_ffi.so or equivalent
-make check           # conformance vectors and C tests
-```
+Smoke-test each new or changed binding against the same sequence as the
+repository quickstart:
 
-On Windows the shared output is a `.dll`; on macOS it is a `.dylib`. The examples look for the bridge at the platform default path under `build/`. Set `CDIN_FFI_LIB` to the full path when you install it elsewhere.
+1. create kernel,
+2. `doc_create` with `hello`,
+3. replace to `Hello, CDIN` at `[0, 5)`,
+4. read the full document back,
+5. close the document, destroy the kernel.
 
-The target names and output filenames are declared by the Makefile. On platforms without a compatible Make toolchain, compile the same source files with your platform's C compiler and link the platform thread/runtime libraries as needed. Do not copy a Linux `.so` into a Windows or macOS build.
-
-## 2. Python (`ctypes`)
-
-Requirements: Python 3.10+ is a practical baseline for the example, a C compiler, and the project build dependencies. No third-party Python package is required.
-
-```sh
-make ffi-shared
-python examples/python/quickstart.py
-```
-
-Expected stdout:
-
-```text
-Hello CDIN
-```
-
-The example writes the document version to stderr. To load an installed library, pass its path:
-
-```sh
-# Linux/macOS shells
-CDIN_FFI_LIB=/absolute/path/to/libcdin_ffi.so python examples/python/quickstart.py
-```
-
-On Windows PowerShell:
-
-```powershell
-$env:CDIN_FFI_LIB = 'C:\path\to\cdin_ffi.dll'
-python examples/python/quickstart.py
-```
-
-Important `ctypes` rules:
-
-- Declare every function's `argtypes` and `restype`. Otherwise pointers and 64-bit values can be truncated or misinterpreted.
-- The bridge returns statuses as integers. `0` is `CDIN_OK`; use `cdin_ffi_status_name` to turn errors into readable diagnostics.
-- `bytes` are passed as `uint8_t *` plus an explicit length. Embedded NUL bytes are allowed.
-- The size-query read is intentional: call once with a null buffer, allocate the returned size, then read again.
-- Always close documents and destroy the kernel, including on exceptions. The example uses `try/finally`.
-
-## 3. Go (`cgo`)
-
-Requirements: Go, a C compiler supported by `cgo`, and a built shared bridge.
-
-```sh
-make ffi-shared
-cd examples/go
-go run .
-```
-
-Expected stdout is `Hello CDIN`; the version goes to stderr. If your linker cannot find the bridge, set `CDIN_FFI_LIB` is **not** automatically consumed by the Go linker: adjust `#cgo LDFLAGS` in `examples/go/main.go` to the installed library directory and platform linker flags. The example includes a Linux-style rpath for local development; macOS/Windows toolchains may need different flags.
-
-Memory boundary rules:
-
-- `C.CBytes` creates a C-owned copy for a Go byte slice. Free it with `C.free` after the synchronous call returns.
-- Never pass a pointer into a Go slice to a function that may retain it beyond the call. The current API copies edit/create input bytes before returning, but the conservative rule remains safer for future APIs.
-- Do not convert arbitrary bytes to a C string to discover its length; NUL is valid document content. Use the explicit size returned by the API.
-- A C `uint64_t` maps to `C.uint64_t` / Go `uint64`; a document handle is not a pointer and should not be cast to a pointer.
-
-## 4. JavaScript (`node` + Koffi)
-
-Requirements: Node.js with native-addon support and npm access or a cached Koffi package. The repository's `examples/node/package.json` declares Koffi.
-
-```sh
-make ffi-shared
-cd examples/node
-npm install
-npm start
-```
-
-Expected stdout is `Hello CDIN`; the version goes to stderr. Set `CDIN_FFI_LIB` to use a bridge installed outside the repository. See the [Koffi quick start](https://koffi.dev/start) and [pointer documentation](https://koffi.dev/pointers) for Koffi's version-specific FFI and pointer rules.
-
-The JavaScript example intentionally uses `Buffer` and explicit lengths. This is the correct pattern for arbitrary document data; `Buffer.from(text, 'utf8')` is suitable only when the application intentionally starts from Unicode text. For an existing file, read the file as bytes instead of decoding and re-encoding it before sending it to the kernel. The repository also contains a TypeScript version, `quickstart.ts`; run it with `npm run start:ts` after `npm install` to install the optional TypeScript development dependencies.
-
-Koffi maps C `uint64_t` results to `BigInt` in the example. Keep these values as `bigint` (`0n`, `6n`, etc.) rather than converting offsets or handles to JavaScript `Number`, which cannot exactly represent every integer above `2^53 - 1`.
-
-## 5. TypeScript
-
-Koffi operates at runtime; TypeScript adds compile-time types around those calls. A small wrapper should make status handling and `bigint` usage explicit rather than spreading raw FFI prototypes throughout the application. For example:
-
-```ts
-export type CdinHandle = bigint;
-export type ByteOffset = bigint;
-
-export function assertCdinOk(status: number, message: string): void {
-  if (status !== 0) throw new Error(`${message}: ${status}`);
-}
-
-export function asBytes(input: Uint8Array): Buffer {
-  // Buffer.from copies the bytes and preserves embedded NUL values.
-  return Buffer.from(input);
-}
-```
-
-The complete TypeScript example is `examples/node/quickstart.ts`; it mirrors the Koffi declarations and lifetime handling in `quickstart.mjs`. It is a standalone example, not a packaged SDK. In your own project, add `@types/node` and a TypeScript build pipeline as appropriate, compile the wrapper, then run it with a supported Node.js runtime.
-
-## 6. Calling the core ABI directly
-
-Use the direct ABI when you need the complete document/search/transaction/snapshot/notification surface or want to avoid an extra bridge layer. The tradeoff is that you must mirror the C ABI exactly:
-
-1. Generate or write bindings against the **same** `include/cdin/kernel.h` shipped with the shared library.
-2. Match C widths exactly (`uint32_t`, `uint64_t`, `size_t`, pointers, callback calling convention, and structure alignment).
-3. Zero-initialize each request/config/result struct, set `struct_size = sizeof(struct)`, and set reserved flags to zero.
-4. Supply a conforming allocator (`alloc`, `realloc`, `free`) to `cdin_kernel_create`. Allocation sizes passed to `realloc` and `free` must be honored as documented.
-5. Check every `cdin_status`; do not inspect outputs unless the return status permits it.
-6. Query `cdin_abi_version` and `cdin_features` at startup, but remember that ABI `0.x` is not promised binary-compatible across arbitrary revisions.
-
-A binding should expose its own safe language types instead of passing raw kernel pointers across application/plugin/network boundaries. Handles belong to the kernel that issued them and remain valid only for the documented lifetime.
-
-## 7. Bridge API surface
-
-`examples/ffi/cdin_ffi.h` exposes only these convenience functions:
-
-| Function | Purpose |
-|---|---|
-| `cdin_ffi_kernel_create` / `cdin_ffi_kernel_destroy` | Create/destroy a kernel with the example's `malloc` allocator. |
-| `cdin_ffi_doc_create` | Create a document from bytes and a length. |
-| `cdin_ffi_doc_replace` | Replace `[start, end)` against an expected document version; returns the new version. |
-| `cdin_ffi_doc_length` | Get document length in bytes. |
-| `cdin_ffi_doc_read` | Query/read the complete document. Null buffer performs a size query. |
-| `cdin_ffi_doc_close` | Close a document. |
-| `cdin_ffi_status_name` | Convert a status to its symbolic name. |
-
-The bridge intentionally does not wrap every kernel feature. For batch edits, transactions, history blobs, snapshots, notifications, positions, and search, add bridge functions that call the corresponding public API; do not reimplement those features in the language binding. Whenever the header or core changes, rebuild and retest the bridge.
-
-## 8. Common integration failures
-
-| Symptom | Likely cause and next step |
-|---|---|
-| Library not found | Build `ffi-shared`, set `CDIN_FFI_LIB`, and check OS/CPU architecture match. |
-| Crash or nonsensical lengths | Fix FFI argument/return types; ensure `uint64_t` stays 64-bit and pointers use pointer types. |
-| `CDIN_VERSION_MISMATCH` | Header and runtime library have incompatible ABI majors; rebuild/package them together. |
-| `CDIN_BUFFER_TOO_SMALL` | Resize from `out_len` and retry; do not assume the first query remains valid if another thread can mutate the document between calls. Use a snapshot for a stable read. |
-| `CDIN_STALE_VERSION` | Read the current version and recompute byte offsets instead of blindly retrying the old edit. |
-| Non-ASCII edits land in the wrong place | Offsets are bytes, not Unicode code points or grapheme clusters. Convert UI positions using the text-position APIs. |
-| Invalid text changes on round trip | Avoid decoding/re-encoding raw document bytes outside the kernel. Read and write bytes unless normalization is an explicit application policy. |
-| Go linker failure | Ensure `CGO_ENABLED=1`, install a C toolchain, and adjust the example's platform-specific `#cgo LDFLAGS`. |
+Expected results: the document version is `1`, the length is `11`, and the
+read-back content is exactly `Hello, CDIN`. If a binding loses or reorders
+bytes at any boundary, this sequence catches it.
