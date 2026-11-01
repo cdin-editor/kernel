@@ -16,7 +16,11 @@ jobs:
       changelog-path: CHANGELOG.md
       test-command: bash scripts/ci-check.sh
       build-command: bash scripts/ci-package.sh
-      artifact-path: dist/*
+      artifact-path: |
+        dist/*.zip
+        dist/*.zip.sha256
+        dist/*.tar.gz
+        dist/*.tar.gz.sha256
       build-matrix-json: >-
         {"include":[
           {"id":"linux-x86_64","os":"ubuntu-24.04"},
