@@ -86,17 +86,15 @@ The `counting` allocator tracks allocation calls and can fail a chosen allocatio
 
 ## Example
 
-```text
-vector abi.basic covers ABI-001 ABI-006 ABI-014 ABI-017 KERNEL-008 ERR-001 ERR-003
-  create allocator=counting
-  expect CDIN_OK
-  abi_version
-  expect CDIN_OK major=1 minor=0 patch=0
-  features
-  expect CDIN_OK
-  destroy handle=k1
-  expect CDIN_OK
-```
+    vector abi.basic covers ABI-001 ABI-006 ABI-014 ABI-017 KERNEL-008 ERR-001 ERR-003
+      create allocator=counting
+      expect CDIN_OK
+      abi_version
+      expect CDIN_OK major=1 minor=0 patch=0
+      features
+      expect CDIN_OK
+      destroy handle=k1
+      expect CDIN_OK
 
 ## Exit codes
 

@@ -8,7 +8,7 @@ or ABI contract violations that could cause crashes or undefined behavior.
 
 ## Reporting a Vulnerability
 
-Please report security vulnerabilities to: bitsgenix@gmail.com
+Please report security vulnerabilities to [bitsgenix@gmail.com](mailto:bitsgenix@gmail.com).
 
 **Please do not report security vulnerabilities through public GitHub issues.**
 

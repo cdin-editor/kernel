@@ -30,7 +30,7 @@ value is process: layout, build loop, gates, and the cost of a change.
 
 ## 2. Source map
 
-```
+```text
 src/
   kernel.c          kernel lifecycle, shutdown, locking entry, queries
   internal.h        shared internal declarations and module ownership map

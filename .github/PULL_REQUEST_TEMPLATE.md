@@ -1,4 +1,4 @@
-## What changed?
+# What changed?
 
 <!-- One or two sentences. -->
 

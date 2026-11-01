@@ -7,7 +7,7 @@ for contributors is `docs/development.md`.
 
 ## 1. Layering and data flow
 
-```
+```text
                  user thread(s)
                       |
              cdin_* public API        (api/*.c: lock + validate + dispatch)

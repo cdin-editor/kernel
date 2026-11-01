@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.2.0] - 2026-11-01
 
 ### Added
+
 - Add the full m-mdy-m/log.c severity set to the kernel logging adapter: ERROR, WARN, INFO, DEBUG, TRACE and FATAL. The original ERROR/WARN/INFO callback values remain unchanged.
 - Prefix every kernel log line with `[KERNEL]`; emit INFO lifecycle records, DEBUG document/transaction events, TRACE diagnostics and WARN resource warnings, with ERROR/FATAL available to extensions. Add configurable severity threshold, output destination, metadata flags and message bounds.
 - Add `cdin_kernel_log` for tagged extension records and options/threshold APIs for runtime logger configuration.
@@ -15,22 +16,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add a gix flow initializer and branch configuration template.
 
 ### Compatibility
+
 - Increment the public C ABI to 1.1.0 for the additive logging API. Existing `cdin_kernel_config` and the original ERROR/WARN/INFO numeric values are unchanged.
 
 ## [1.1.0] - 2026-10-20
 
 ### Added
+
 - Add a multi-architecture Docker SDK image for `linux/amd64` and `linux/arm64`.
 - Publish the SDK image to Docker Hub from the tag-based GitHub Actions release workflow, with semantic-version tags and `latest` reserved for stable releases.
 - Include browsable documentation and examples in downloadable release archives, while retaining the installed documentation.
 
 ### Improved
+
 - Organize public-header comments into clearer API sections, covering caller-owned buffers, version checks, thread safety, resource lifetime, and ABI compatibility.
 - Simplify the README and align build, installation, and getting-started instructions with the actual Makefile and release installers for Linux, macOS, Windows, and Docker.
 - Rewrite the C quickstart comments and add an index for C, Python, Go, JavaScript, and TypeScript examples; document the optional FFI bridge as sample code rather than part of the public ABI.
 - Improve forward literal-search performance. Linux uses `memmem` when the search is byte-exact, uncancellable, and has a full candidate-window budget; other platforms use a selective-byte anchor before full comparisons. Cancellable and step-limited searches retain their incremental path.
 
 ### Compatibility
+
 - The package release version advances to `1.1.0`; the public C ABI and CDIN Spec remain at `1.0.0`. The search optimization does not change the public ABI or result-range semantics.
 
 ## [1.0.0] - 2026-10-20
@@ -50,6 +55,7 @@ Stable C ABI 1.0.0 release, synchronized with the CDIN Spec 1.0.0 architecture b
 ## [0.1.0] - 2026-10-20
 
 ### Added
+
 - Initial public release of the `cdin-kernel` native C11 document-editing kernel.
 - Public C API for kernel lifecycle, document handles, byte-preserving document
   creation and access, replacement edits, version checks, and serialization.
@@ -70,6 +76,7 @@ Stable C ABI 1.0.0 release, synchronized with the CDIN Spec 1.0.0 architecture b
   against the installed static and shared libraries before attaching assets.
 
 ### Fixed
+
 - Memory-lifetime, allocation-failure atomicity, document-table growth, edit-tail
   relocation, undo-history accounting, and serialization edge cases covered by
   the regression suite.
@@ -78,6 +85,7 @@ Stable C ABI 1.0.0 release, synchronized with the CDIN Spec 1.0.0 architecture b
   exit status and process-scoped state does not leak between vector files.
 
 ### Compatibility and limitations
+
 - This is an initial development release. The public API/ABI is not yet declared
   stable; consumers should pin the exact release and expect possible breaking
   changes before a stable 1.0.0 release.
@@ -88,7 +96,6 @@ Stable C ABI 1.0.0 release, synchronized with the CDIN Spec 1.0.0 architecture b
 - Full spec conformance is not claimed for this initial release. See `docs/abi.md`
   and `docs/limits-and-status.md` for ABI constraints, unsupported behavior, and
   documented limitations.
-
 
 ### Changed - P7: layered source tree, full gate green
 
@@ -115,6 +122,7 @@ and TSan all report nothing on gcc 13.3.0 (Ubuntu 24.04 WSL2), bench and
   search request/result shape (`cdin_search`, caller-owned range arrays).
 
 ### Added - P4: request struct and blob copy-out
+
 Gate green: 100 vectors, P1 (10 tests) and P3 (9 tests) all pass; ASan, UBSan
 and TSan report nothing on gcc 13.3.0 (Ubuntu 24.04 WSL2); 0 strict-allocator
 violations.
@@ -132,12 +140,14 @@ violations.
   isolation, and allocation failure under load.
 
 ### Changed — P4: internal
+
 - `conformance/runner/alloc_strict.c`: spinlock added for thread-safety
   (snapshot release frees blocks outside the kernel lock).
 - `tests/test_p1.c`: updated for new `cdin_notif_subscribe` signature and
   `cdin_doc_replace` request struct; added `test_get_last_blob`.
 
 ### Added — P2: text semantics
+
 Gate green: `text.eol.*`, `text.bytes.*` and `pos.*` pass; ASan, UBSan and TSan
 report nothing on gcc 13.3.0 and clang 18.1.3 (Ubuntu 24.04); 0 strict-allocator
 violations; 24 new vectors. Logs in `docs/baseline/p2/`.
@@ -160,6 +170,7 @@ violations; 24 new vectors. Logs in `docs/baseline/p2/`.
   (POS-020, POS-031).
 
 ### Fixed — P2
+
 - `cdin_doc_line_count` counted both bytes of a CRLF pair as two terminators.
 - The line index was recomputed from scratch on every query and was not
   invalidated after an edit.
@@ -174,6 +185,7 @@ violations; 24 new vectors. Logs in `docs/baseline/p2/`.
   process scope cannot contaminate the results of unrelated files.
 
 ### Fixed — P1: memory safety and object lifetime
+
 P1 gate green on Ubuntu 24.04 (gcc 13.3.0 and clang 18.1.3): ASan, UBSan and
 TSan report nothing, LeakSanitizer reports no leaks, the strict allocator
 reports 0 violations, and the failure-atomicity sweeps pass. Windows MinGW
@@ -214,6 +226,7 @@ Logs in `docs/baseline/p1/`; the P0 baseline in `docs/baseline/p0/` is untouched
   `-Wformat=2`).
 
 ### Removed — P1
+
 - `cdin_edit_result.blob_before` / `blob_after` and their lengths. One pointed
   into the caller's input buffer, the other into the undo store. ABI-008
   requires explicit ownership; the two-call replacement is proposed in
@@ -221,6 +234,7 @@ Logs in `docs/baseline/p1/`; the P0 baseline in `docs/baseline/p0/` is untouched
   are unimplemented, not silently broken.
 
 ### Added — P0: build, CI and conformance runner
+
 - Portable `Makefile` (`CC ?= cc`), objects and binaries under `build/`,
   `-MMD -MP` dependencies, `asan`/`tsan`/`bench`/`fuzz-build`/`trace` targets.
 - CI matrix: ubuntu gcc, ubuntu clang, windows MSYS2 UCRT64, plus ASan, TSan
@@ -234,6 +248,7 @@ Logs in `docs/baseline/p1/`; the P0 baseline in `docs/baseline/p0/` is untouched
   relocate-safe edits, destroy, and allocation-failure sweeps.
 
 ### Added — K0: ABI skeleton
+
 - Status codes, ABI version query, feature query
 - Injected allocator struct; kernel create/destroy
 - Document handle type (`cdin_doc`, 24-bit slot + 40-bit generation)
@@ -241,11 +256,13 @@ Logs in `docs/baseline/p1/`; the P0 baseline in `docs/baseline/p0/` is untouched
 - Conformance vector format and runner
 
 ### Added — K1: Documents
+
 - Document create (empty or from bytes), close, version query, length, read, serialize
 - Creation-time limits: max documents, max document size
 - Byte-exact preservation: no BOM stripping, no normalization, invalid UTF-8 kept
 
 ### Added — K2: Replace
+
 - `cdin_doc_replace`: the single edit primitive
 - Atomic version check (expected version; `STALE_VERSION` on mismatch)
 - Edit result: new version, start, removed, inserted, new length
@@ -253,6 +270,7 @@ Logs in `docs/baseline/p1/`; the P0 baseline in `docs/baseline/p0/` is untouched
 - Batch replace returns `CDIN_UNSUPPORTED`
 
 ### Added — K3: Regions, lines, positions
+
 - Region classification (valid/raw) derived from content
 - UTF-8 validation
 - Line index: `line_count`, `line_start`, `line_from_offset`
@@ -261,6 +279,7 @@ Logs in `docs/baseline/p1/`; the P0 baseline in `docs/baseline/p0/` is untouched
 - Conversions: byte<->code point, byte<->line+col
 
 ### Added — K4: Undo, redo, transactions
+
 - Linear undo/redo history; undo and redo are new versions
 - Coalescing by caller key
 - New edit discards redo units
@@ -270,6 +289,7 @@ Logs in `docs/baseline/p1/`; the P0 baseline in `docs/baseline/p0/` is untouched
 - Clean marker and metadata value
 
 ### Added — K5: Change notifications
+
 - Per-subscriber bounded queue
 - Subscribe returns current version
 - Events in version order; each exactly once
@@ -278,12 +298,14 @@ Logs in `docs/baseline/p1/`; the P0 baseline in `docs/baseline/p0/` is untouched
 - Wakeup callback that only signals
 
 ### Added — K6: Concurrency, snapshots, shutdown
+
 - Immutable snapshots with acquire/release; per-document limit
 - Snapshot reads never see partial mutations
 - FIFO sequence number assignment
 - Shutdown: graceful and abort modes
 
 ### Added — K7: Search
+
 - Literal and bytes modes; regex returns `CDIN_UNSUPPORTED`
 - Forward and backward search; find-all with limit
 - Results bound to document version
@@ -293,12 +315,14 @@ Logs in `docs/baseline/p1/`; the P0 baseline in `docs/baseline/p0/` is untouched
 - Persian/Arabic letters never treated as equal
 
 ### Added — K8: Regex spike
+
 - Evaluated PCRE2 against ADR-0009 criteria: passes all
 - Oniguruma not installed; not evaluated
 - Recommendation: PCRE2 (BSD-3-Clause, C API, UTF-8, limits, cancellation)
 - Engine not wired in; awaiting owner decision
 
 ### Added — K9: Unicode
+
 - Pinned Unicode version: 15.1.0
 - Unicode version query
 - Simple case folding for case-insensitive search
@@ -306,16 +330,19 @@ Logs in `docs/baseline/p1/`; the P0 baseline in `docs/baseline/p0/` is untouched
 - No normalization or mark-removal options
 
 ### Added — K10: Fuzzing, hardening
+
 - Fuzz targets: public API inputs, region/line classifiers, vector parser
 - Final header review against ABI rules
 - Complete API documentation
 
 ### Added — K11: Performance
+
 - Benchmark program covering all required operations
 - Performance method documented
 - No optimized paths added (awaiting baseline measurements)
 
 ### Known incomplete
+
 - Regex engine not wired in (PCRE2 recommended)
 - Batch replace returns `CDIN_UNSUPPORTED`
 - Undo memory cap not enforced
@@ -327,4 +354,5 @@ Logs in `docs/baseline/p1/`; the P0 baseline in `docs/baseline/p0/` is untouched
 - No verification has been run on any requirement
 
 ### Blocker
+
 - GCC (C:\msys64\mingw64\bin\gcc.exe v16.1.0) fails silently on this machine — exit code 1, no output, no object file. All verification is blocked.
