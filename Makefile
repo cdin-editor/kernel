@@ -6,11 +6,16 @@ AR      ?= ar
 RANLIB  ?= ranlib
 PKG_CONFIG ?= pkg-config
 
+# pkgconf uses ';' for path lists on Windows and ':' on POSIX hosts.
+# MSYS2/UCRT64 is a Windows host even though Make runs in a POSIX shell.
+HOST_OS := $(shell uname -s 2>/dev/null)
+PKG_CONFIG_PATH_SEPARATOR := $(if $(filter Windows_NT,$(OS)),;,$(if $(filter MINGW% MSYS% CYGWIN%,$(HOST_OS)),;,:))
+
 # m-mdy-m/log.c is an independently built static dependency. Its source and
 # installation live outside src/; applications consume it transitively via
 # cdin-kernel.pc (Requires.private).
 DEPS_PREFIX ?= $(CURDIR)/.deps
-LOG_PKG_CONFIG_PATH := $(DEPS_PREFIX)/lib/pkgconfig$(if $(PKG_CONFIG_PATH),:$(PKG_CONFIG_PATH))
+LOG_PKG_CONFIG_PATH := $(DEPS_PREFIX)/lib/pkgconfig$(if $(PKG_CONFIG_PATH),$(PKG_CONFIG_PATH_SEPARATOR)$(PKG_CONFIG_PATH))
 LOG_PKG_CONFIG = PKG_CONFIG_PATH="$(LOG_PKG_CONFIG_PATH)" $(PKG_CONFIG)
 LOG_PKG_OK := $(shell $(LOG_PKG_CONFIG) --exists m-mdy-m-log 2>/dev/null && echo yes)
 ifneq ($(filter deps clean,$(MAKECMDGOALS)),)
@@ -25,7 +30,6 @@ LOG_LIBS := $(shell $(LOG_PKG_CONFIG) --libs m-mdy-m-log 2>/dev/null)
 # intentionally runs a POSIX shell on Windows. Detect the host and shell
 # separately so Windows DLLs can be built without routing Bash commands through
 # cmd.exe.
-HOST_OS := $(shell uname -s 2>/dev/null)
 WINDOWS_HOST := $(if $(filter Windows_NT,$(OS)),1,$(if $(filter MINGW% MSYS% CYGWIN%,$(HOST_OS)),1,0))
 WINDOWS_CMD_SHELL := $(if $(filter Windows_NT,$(OS)),$(if $(filter MINGW% MSYS% CYGWIN%,$(HOST_OS)),0,1),0)
 
