@@ -40,3 +40,5 @@ dist/
 
 # Shared Pipeline helper checkout (when used locally)
 /.pipeline/
+
+*.rar
