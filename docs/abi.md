@@ -623,4 +623,3 @@ if (cdin_abi_version(&major, &minor, &patch) != CDIN_OK ||
 
 Minor mismatch is tolerated as long as calls you use exist in the loaded
 minor version (that's the struct_size and feature-mask protocol).
-

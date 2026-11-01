@@ -2084,9 +2084,3 @@ the kernel that issued it; using one on another kernel returns
 **What if the version or sequence reaches its maximum?** Both refuse to wrap:
 further mutations fail with `CDIN_LIMIT_EXCEEDED` (`CDIN_LIMIT_VERSION` or
 `CDIN_LIMIT_SEQUENCE` in `details.limit_id`).
-
-
-
-
-
-
