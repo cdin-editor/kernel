@@ -21,10 +21,14 @@ case "$arch" in
 esac
 
 asset_base="cdin-kernel-${PACKAGE_VERSION}-${platform}-${arch}"
+# dist/ is a public artifact directory, not a package workspace. Keeping the
+# expanded tree elsewhere prevents broad artifact globs (for example dist/*)
+# from publishing headers, docs, examples and individual library files.
 dist="$repo_root/dist"
 package_name="$asset_base"
-package_root="$dist/$package_name"
-mkdir -p "$dist"
+package_parent="$repo_root/build/package"
+package_root="$package_parent/$package_name"
+mkdir -p "$package_parent" "$dist"
 rm -rf "$package_root"
 mkdir -p "$package_root/share/cdin-kernel"
 
@@ -48,10 +52,10 @@ printf 'Package version: %s\nC ABI version: %s\nPlatform: %s\nArchitecture: %s\n
 
 if [[ "$platform" == windows ]]; then
   command -v zip >/dev/null || { echo 'zip is required on Windows packaging runner' >&2; exit 2; }
-  (cd "$dist" && zip -qr "${asset_base}.zip" "$package_name")
+  (cd "$package_parent" && zip -qr "$dist/${asset_base}.zip" "$package_name")
   asset="$dist/${asset_base}.zip"
 else
-  tar -C "$dist" -czf "$dist/${asset_base}.tar.gz" "$package_name"
+  tar -C "$package_parent" -czf "$dist/${asset_base}.tar.gz" "$package_name"
   asset="$dist/${asset_base}.tar.gz"
 fi
 

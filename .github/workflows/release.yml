@@ -17,10 +17,10 @@ jobs:
       test-command: bash scripts/ci-check.sh
       build-command: bash scripts/ci-package.sh
       artifact-path: |
-        dist/*.zip
-        dist/*.zip.sha256
-        dist/*.tar.gz
-        dist/*.tar.gz.sha256
+        dist/cdin-kernel-*.zip
+        dist/cdin-kernel-*.zip.sha256
+        dist/cdin-kernel-*.tar.gz
+        dist/cdin-kernel-*.tar.gz.sha256
       build-matrix-json: >-
         {"include":[
           {"id":"linux-x86_64","os":"ubuntu-24.04"},
