@@ -34,3 +34,9 @@ baseline
 # Node.js / TypeScript examples
 node_modules/
 dist/
+
+# Project-local installed external dependencies
+/.deps/
+
+# Shared Pipeline helper checkout (when used locally)
+/.pipeline/

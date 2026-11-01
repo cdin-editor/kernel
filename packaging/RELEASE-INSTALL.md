@@ -1,9 +1,11 @@
 # Installing cdin-kernel from a release asset
 
 Choose the archive matching your operating system and CPU architecture. These
-archives contain the public header, static library, shared library/import
-library where supported, pkg-config metadata, documentation, and a quickstart
-example. The package release version and C ABI version are recorded separately
+archives contain the public kernel header, the separately packaged
+`m-mdy-m/log.c` logger header/static library, the kernel static library,
+shared library/import library where supported, pkg-config metadata, licenses,
+documentation, and a quickstart example. The shared kernel embeds the logger
+statically; static consumers link the logger through `cdin-kernel.pc`. The package release version and C ABI version are recorded separately
 in `BUILD-INFO.txt`.
 
 ## Linux / macOS
@@ -33,8 +35,9 @@ pkg-config directory, then link with `pkg-config`:
 
 ```sh
 export PKG_CONFIG_PATH="$HOME/.local/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
-cc -std=c11 -I"$HOME/.local/include" app.c \
-  "$HOME/.local/lib/libcdin_kernel.a" -pthread -o app
+cc -std=c11 app.c $(pkg-config --cflags cdin-kernel) \
+  "$(pkg-config --variable=libdir cdin-kernel)/libcdin_kernel.a" \
+  $(pkg-config --libs --static m-mdy-m-log) -pthread -o app
 ```
 
 ## Windows (x86-64, MinGW-w64 UCRT64)
@@ -49,12 +52,14 @@ The default prefix is `%LOCALAPPDATA%\cdin-kernel`; choose another with
 `-Prefix`. Add the installed DLL directory to your user PATH with
 `-AddBinToUserPath`, or keep `bin\cdin_kernel.dll` beside the application that
 uses the shared library. The archive is built with MinGW-w64 UCRT64; MSVC ABI
-compatibility is not promised by this release.
+compatibility is not promised by this release. Static consumers should use
+`pkg-config --static --cflags --libs cdin-kernel` (with the installed prefix's
+`lib/pkgconfig` on `PKG_CONFIG_PATH`) so `libm-mdy-m-log.a` is linked too.
 
 ## Consumer projects
 
 Use `include/cdin/kernel.h` and link either `libcdin_kernel.a` (static) or the
-platform's shared-library import/runtime files. This release provides the stable C ABI `1.0.0`. Compile consumers against the
+platform's shared-library import/runtime files. This release provides the stable C ABI `1.1.0`. Compile consumers against the
 matching `include/cdin/kernel.h`, query the loaded ABI version at startup, and
 review the compatibility rules before updating bindings. Verify SHA-256 against
 the adjacent `.sha256` file before installing.

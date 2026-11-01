@@ -1,0 +1,16 @@
+_mmlog_abi_version
+_mmlog_level_name
+_mmlog_status_name
+_mmlog_logger_config_init
+_mmlog_fields_init
+_mmlog_event_init
+_mmlog_logger_create
+_mmlog_logger_destroy
+_mmlog_logger_set_min_level
+_mmlog_logger_set_color_mode
+_mmlog_logger_set_quiet
+_mmlog_logger_add_file
+_mmlog_logger_add_callback
+_mmlog_logger_flush
+_mmlog_logger_write
+_mmlog_logf

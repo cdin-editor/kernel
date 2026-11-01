@@ -1,31 +1,23 @@
-name: Bug Report
-description: A crash, leak, incorrect result or undefined behavior
+name: Bug
+description: Incorrect kernel behavior, crash, or memory issue
 title: "[BUG] "
-labels: ["bug"]
 body:
   - type: input
-    id: where
+    id: area
     attributes:
-      label: File and function
-      placeholder: src/kernel.c, cdin_doc_replace
+      label: Kernel area
+      placeholder: document / text / search / transaction / notification
     validations:
       required: true
   - type: textarea
-    id: what
+    id: actual
     attributes:
-      label: What happened
+      label: What happened?
     validations:
       required: true
   - type: textarea
-    id: expected
+    id: reproduce
     attributes:
-      label: What should happen
-    validations:
-      required: true
-  - type: textarea
-    id: repro
-    attributes:
-      label: How to reproduce
-      placeholder: Conformance vector or code snippet
+      label: Reproduction and expected behavior
     validations:
       required: true

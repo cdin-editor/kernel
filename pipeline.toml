@@ -1,0 +1,38 @@
+schema_version = 1
+
+[project]
+name = "cdin-kernel"
+description = "Portable C11 text kernel with a stable C ABI"
+
+[defaults]
+timeout_seconds = 900
+fail_fast = true
+
+[tasks.deps]
+description = "Install the pinned m-mdy-m/log.c static dependency"
+command = ["bash", "scripts/install-deps.sh", "--prefix", ".deps"]
+
+[tasks.build]
+description = "Build static, shared and FFI libraries"
+command = ["make", "all", "shared", "ffi-shared"]
+depends_on = ["deps"]
+
+[tasks.test]
+description = "Run conformance vectors and C regression tests"
+command = ["make", "check"]
+depends_on = ["build"]
+
+[tasks.quickstart]
+description = "Build and run the C quickstart consumer"
+command = ["make", "quickstart"]
+depends_on = ["build"]
+
+[tasks.header]
+description = "Check the public header from C11 and C++17"
+command = ["bash", "scripts/check-public-header.sh"]
+depends_on = ["build"]
+
+[tasks.check]
+description = "Run the complete local quality gate"
+command = ["git", "diff", "--check"]
+depends_on = ["test", "quickstart", "header"]

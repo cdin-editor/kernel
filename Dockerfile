@@ -6,12 +6,13 @@ FROM debian:bookworm-slim AS build
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-       build-essential pkg-config ca-certificates \
+       build-essential cmake git pkg-config ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src
 COPY . .
-RUN make clean \
+RUN make deps \
+    && make clean \
     && make all shared quickstart \
     && make check \
     && make PREFIX=/opt/cdin install

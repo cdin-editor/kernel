@@ -22,6 +22,10 @@ value is process: layout, build loop, gates, and the cost of a change.
 | `examples/` | `c/quickstart.c`, `ffi/` bridge, `go/`, `node/`, `python/` binding examples. |
 | `tools/` | `gen_unicode.py` (regenerate Unicode tables), `trace.py` (requirement trace report). |
 | `packaging/` | `.pc` template, release-install documentation and scripts. |
+| `.github/` | Small issue/PR templates and Pipeline-backed CI/release/benchmark workflows. |
+| `.gix/` | gix flow template, materialized into `.gix/config` during Git-flow initialization. |
+| `pipeline.toml` | Shared local/CI task graph executed by `m-mdy-m/pipeline`. |
+| `psx.yml` | PSX project-structure rules for this C library. |
 | `docs/` | The documentation you are reading. |
 
 ## 2. Source map
@@ -48,8 +52,11 @@ behavior is hard to find, check whether it ended up in the wrong layer.
 ## 3. Build loop
 
 ```sh
+make deps           # install the pinned m-mdy-m/log.c dependency into .deps/
 make                # release build of the library
 make check          # vectors + tests: the change is not done until this is green
+pipeline run check  # same full task graph used by GitHub Actions
+psx check           # verify the repository layout against psx.yml
 make debug          # -O0 -g3
 make asan           # ASan+UBSan over the whole vector and test set
 make tsan           # TSan ditto (needs a POSIX shell; run under WSL/CI on Windows)
@@ -57,8 +64,11 @@ make bench          # performance current numbers
 ```
 
 On Windows/MinGW, MSYS2/UCRT64 provides the toolchain. `CC`, `AR`, `RANLIB`
-can be overridden on the command line. The public header is picked up in
-`include/` for every compile (no generated-code step).
+can be overridden on the command line. Install dependencies with `make deps`
+first; the pinned logger checkout lives under `build/deps/` and its installed
+headers/libraries live under `.deps/`. It is not vendored into `src/`. The
+public kernel header is picked up in `include/` for every compile (no
+kernel-generated-code step).
 
 Do not run two `make` processes on one checkout; object files race and the
 link fails with confusing `undefined reference` lists. A `make clean && make`
@@ -143,8 +153,11 @@ neighboring files exactly:
   keeps fault atomicity inside each module's own validation/preparation.
 - Comments explain non-obvious invariants and none of the obvious. No
   commented-out code. No TODO without an owner and a spec link.
-- Every error message string the log sink could receive is UTF-8 and
-  NUL-terminated internal buffers (`k_log` computes the length).
+- Use `K_LOG_TRACE`, `K_LOG_DEBUG`, `K_LOG_INFO`, `K_LOG_WARN`, `K_LOG_ERROR`
+  and `K_LOG_FATAL` for internal records. Emit them after releasing the kernel
+  lock; never call a host log sink from a `*_locked` module function. Every
+  record is tagged `[KERNEL]` by the adapter, and callback length excludes the
+  NUL terminator.
 
 ## 8. Testing additions
 
@@ -185,3 +198,28 @@ pin the order matter.
 5. Build the release archives (per `packaging/RELEASE-INSTALL.md`), verify
    intaller hashes and that `install.sh`/`install.ps1` accept `--prefix`.
 6. Record everything in the phase report: gates, numbers, NOT RUN list.
+
+## 11. Repository workflow tools
+
+The repository uses three small, explicit project tools rather than copying
+their implementations:
+
+- **PSX** checks the C-library layout in `psx.yml`: public header/source, tests,
+  build files, documentation and GitHub templates. Run `psx check`; preview
+  missing scaffolding with `psx fix --dry-run`.
+- **Pipeline** owns the portable task graph in `pipeline.toml`. The GitHub
+  workflows call its pinned reusable workflows; locally, install
+  `m-mdy-m/pipeline` and run `pipeline validate` then `pipeline run check`.
+  CI and local runs therefore share the same dependency, build, test, quickstart
+  and header-check tasks.
+- **gix** owns branch operations. After the first commit on `main` (or
+  `master`/`trunk`), install `gix` and run `bash scripts/init-git-flow.sh`.
+  The script materializes `.gix/config` from `.gix/config.default` and runs
+  `gix flow init`, which commits the config on the current mainline and creates
+  `develop`. Use `gix feature start <name>`, `gix bugfix start <name>`, and
+  `gix release start <version>` for the corresponding short-lived branches.
+
+The default flow is `main -> develop -> feature/*, bugfix/*, release/*`;
+`hotfix/*` branches from `main` and merge back into both base branches. The
+active `.gix/config` is intentionally generated in a real Git checkout because
+a ZIP archive cannot carry Git refs or create a `develop` branch.

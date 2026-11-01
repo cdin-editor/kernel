@@ -26,16 +26,28 @@ for contributors is `docs/development.md`.
    core/handle_table.c: slot+generation pools (docs/txns/snapshots/subs).
 ```
 
-Ownership: the `cdin_kernel` owns every allocation directly or through
+Ownership: the `cdin_kernel` owns every core allocation directly or through
 module structures (docs table, txn table, snapshots, subscriptions, and each
-document's history units and text blocks). Nothing escapes to the user
+document's history units and text blocks). The optional opaque logger handle
+is owned by the kernel but its private allocation is managed internally by
+`m-mdy-m/log.c`; it is destroyed with the kernel. Nothing escapes to the user
 except copies.
 
 ## 2. Kernel and lifecycle
 
 `src/kernel.c` owns creation/validation of `cdin_kernel_config`, the lock
 entry points (`k_lock`, `k_unlock`), the monotonic `seq` counter, shutdown,
-destroy, and the version/feature/status-name queries.
+destroy, and the version/feature/status-name queries. Its optional logging
+adapter uses the independently installed `m-mdy-m/log.c` C11 library. Each
+kernel owns its logger instance. CDIN preserves the original callback values
+(ERROR=0, WARN=1, INFO=2) and adds DEBUG, TRACE and FATAL; the adapter maps all
+six values to `m-mdy-m/log.c`. A bridge prepends `[KERNEL]` after formatting so
+callbacks and optional stdout/stderr destinations share the same prefix. The
+logger can be configured with a minimum severity, output destination, metadata
+flags and a bounded message size. It is created only when logging is enabled.
+The logger's static-archive symbols are excluded from the kernel shared
+library's exported symbol table so the third-party API does not become part of
+CDIN's ABI.
 
 Shutdown semantics live here and nowhere else. A stopped kernel:
 

@@ -9,6 +9,9 @@ $PackageRoot = $PSScriptRoot
 
 $RequiredFiles = @(
     (Join-Path $PackageRoot 'include\cdin\kernel.h'),
+    (Join-Path $PackageRoot 'include\m-mdy-m\log.h'),
+    (Join-Path $PackageRoot 'lib\libm-mdy-m-log.a'),
+    (Join-Path $PackageRoot 'lib\pkgconfig\m-mdy-m-log.pc'),
     (Join-Path $PackageRoot 'lib\libcdin_kernel.a'),
     (Join-Path $PackageRoot 'lib\libcdin_kernel.dll.a'),
     (Join-Path $PackageRoot 'bin\cdin_kernel.dll')

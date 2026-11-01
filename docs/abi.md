@@ -6,7 +6,7 @@ The behavioral tutorial is the [user guide](user-guide.md); this document
 states contracts, not workflows.
 
 Authoritative source: `include/cdin/kernel.h`. ABI version at the time of
-writing: **1.0.0** (`CDIN_KERNEL_ABI_MAJOR == 1`, minor 0). Unicode data:
+writing: **1.1.0** (`CDIN_KERNEL_ABI_MAJOR == 1`, minor 1). Unicode data:
 **15.1.0**. Where this document and the header disagree, the header wins.
 
 ## 1. Global shape of the ABI
@@ -34,7 +34,7 @@ writing: **1.0.0** (`CDIN_KERNEL_ABI_MAJOR == 1`, minor 0). Unicode data:
 | Macro | Value | Meaning |
 |---|---|---|
 | `CDIN_KERNEL_ABI_MAJOR` | `1u` | ABI major; a match is required at `cdin_kernel_create`. |
-| `CDIN_KERNEL_ABI_MINOR` | `0u` | ABI minor; grows for compatible additions. |
+| `CDIN_KERNEL_ABI_MINOR` | `1u` | ABI minor; grows for compatible additions. |
 | `CDIN_ANY_VERSION` | `UINT64_MAX` | Disables version checks; the value can never be a real document version. |
 
 The runtime queries (all return `cdin_status`; set output only on `CDIN_OK`):
@@ -306,10 +306,48 @@ typedef struct cdin_log_sink {
 ```
 
 - `struct_size` 0 or exact; zeroing the fields is mandatory when 0.
-- `level`: 0 error, 1 warning, 2 info.
-- `message` is UTF-8, not NUL-terminated; read exactly `len` bytes.
-- In 1.0.0 the only message is a warning emitted when a kernel is destroyed
-  while snapshots are still live.
+- `level`: `CDIN_LOG_ERROR=0`, `CDIN_LOG_WARN=1`, `CDIN_LOG_INFO=2`,
+  `CDIN_LOG_DEBUG=3`, `CDIN_LOG_TRACE=4`, `CDIN_LOG_FATAL=5`. The original
+  three values remain numerically compatible.
+- `message` is UTF-8 and NUL-terminated for convenience; `len` is the authoritative
+  byte length excluding the terminator. Every line begins with `[KERNEL]`; the
+  default metadata identifies `layer=kernel` and `component=cdin-kernel`.
+- `cdin_log_options_init` supplies defaults; `cdin_kernel_set_log_options`
+  configures severity threshold, console destination, formatting flags and
+  message size. `cdin_kernel_set_log_level` changes just the threshold.
+- `cdin_kernel_log` is the extension-facing entry point for tagged messages.
+  Its `component` defaults to `cdin-kernel` when NULL or empty.
+- Log callbacks are synchronous and run without the kernel lock. Their string
+  is NUL-terminated with `len` excluding the terminator; the string and context
+  are borrowed for the duration of the callback. Do not destroy the kernel or
+  replace logger options from a log callback.
+- The default threshold is INFO. DEBUG and TRACE records require a lower
+  threshold. A console-only logger may be enabled without a callback sink.
+- Call `cdin_kernel_set_log_options` before sharing the kernel with worker
+  threads; replacing the logger while logging is active is unsupported.
+
+### 5.4 `cdin_log_options` and logger controls
+
+`cdin_log_options` is an independent, versioned-by-size configuration. Initialize
+it with `cdin_log_options_init` before changing fields:
+
+| Field | Meaning |
+|---|---|
+| `min_level` | Minimum accepted severity: ERROR, WARN, INFO, DEBUG, TRACE or FATAL. Default INFO. |
+| `output` | CALLBACK (callback only), STDERR, STDOUT or BOTH. A configured callback receives every record in all modes. |
+| `format_flags` | Optional timestamp, layer, component, source and function metadata. Defaults to timestamp/layer/component. |
+| `max_message_bytes` | Maximum message body bytes, 1 through 1 MiB. Default 16 KiB. |
+
+`cdin_kernel_set_log_options` creates a replacement logger and must be called
+before sharing the kernel with worker threads. It must not race with active
+logging. `cdin_kernel_set_log_level` changes only the threshold. A callback-only
+configuration requires a callback in `cdin_kernel_config`; console-only output
+does not. Every output route is prefixed `[KERNEL]`, independent of the configured
+metadata flags. `cdin_kernel_log` is the extension entry point for an explicitly
+named component. The kernel uses INFO for initialization/shutdown, DEBUG for
+document/transaction lifecycle events, TRACE for low-level sequence diagnostics,
+and WARN for a live-snapshot destruction condition; ERROR and FATAL are available
+to platform adapters and extensions.
 
 ## 6. Struct reference
 
@@ -330,7 +368,12 @@ queue capacity clamps to `[4, 65536]`. The document-size default is clamped
 to `SIZE_MAX/4`. `abi_major` selects the ABI contract; it must equal
 `CDIN_KERNEL_ABI_MAJOR`.
 
-### 6.2 `cdin_replace_request`
+### 6.2 `cdin_log_options`
+
+`struct_size` must be initialized by `cdin_log_options_init`. See section 5.4
+for severity, output, metadata, and message-bound contracts.
+
+### 6.3 `cdin_replace_request`
 
 | Field | Constraint |
 |---|---|
@@ -342,7 +385,7 @@ to `SIZE_MAX/4`. `abi_major` selects the ABI contract; it must equal
 | `coalesce_key` | any non-zero value enables coalescing with a matching key |
 | `blob_before`/`blob_after` | optional, each `<= max_blob_size` |
 
-### 6.3 `cdin_reload_request`
+### 6.4 `cdin_reload_request`
 
 | Field | Constraint |
 |---|---|
@@ -350,7 +393,7 @@ to `SIZE_MAX/4`. `abi_major` selects the ABI contract; it must equal
 | `expected_version` | current version, or `CDIN_ANY_VERSION` |
 | `bytes`, `len` | NULL only when `len == 0`; `len <= max_document_size` |
 
-### 6.4 `cdin_batch_request`
+### 6.5 `cdin_batch_request`
 
 | Field | Constraint |
 |---|---|
@@ -363,14 +406,14 @@ to `SIZE_MAX/4`. `abi_major` selects the ABI contract; it must equal
 | `coalesce_key` | must be 0 |
 | `blob_before`/`blob_after` | optional, per unit |
 
-### 6.5 `cdin_edit_result`
+### 6.6 `cdin_edit_result`
 
 Output. Caller sets `struct_size`; all other fields written only after a
 mutating call returns. `details` is zeroed at the start of each call. Fields
 `start`, `removed`, `inserted` and `blob_len` are 0 when a no-op fails or when
 `edit_count != 1`.
 
-### 6.6 `cdin_history_request` (undo/redo)
+### 6.7 `cdin_history_request` (undo/redo)
 
 | Field | Constraint |
 |---|---|
@@ -383,27 +426,27 @@ mutating call returns. `details` is zeroed at the start of each call. Fields
 `CDIN_BUFFER_TOO_SMALL` sets `details.required` to the needed bytes; the check
 occurs before the version check.
 
-### 6.7 `cdin_txn_begin_request` and `cdin_txn_commit_request`
+### 6.8 `cdin_txn_begin_request` and `cdin_txn_commit_request`
 
 Begin: `flags` 0, `expected_version` current (or `CDIN_ANY_VERSION`).
 Commit: `flags` 0, optional blob pair, each `<= max_blob_size`. A transaction
 commit with no pending edits returns `CDIN_OK`, `edit_count == 0`, and does
 not change the version or consume a sequence number.
 
-### 6.8 `cdin_eol_info`
+### 6.9 `cdin_eol_info`
 
 Caller sets `struct_size`; the struct is overwritten on success. Empty
 documents report zero terminators, `final_line_unterminated == 0`, and
 `mixed == 0`.
 
-### 6.9 `cdin_subscribe_request`
+### 6.10 `cdin_subscribe_request`
 
 | Field | Constraint |
 |---|---|
 | `flags` | must be 0 |
 | `wakeup`, `wakeup_ctx` | optional; wakeup is invoked once per mutation, after queueing, with the caller lock released |
 
-### 6.10 `cdin_notif_event` and constants
+### 6.11 `cdin_notif_event` and constants
 
 `cdin_notif_kind` numeric values are ABI-stable:
 
@@ -423,7 +466,7 @@ documents report zero terminators, `final_line_unterminated == 0`, and
 `CDIN_NOTIF_MAX_EDITS == 8`; `edits_stored == min(edit_count, 8)`;
 `edits_truncated != 0` invalidates the description list.
 
-### 6.11 `cdin_search_request` / `cdin_search_result`
+### 6.12 `cdin_search_request` / `cdin_search_result`
 
 See user guide section 12 for the complete field meanings. The mode and
 direction constants (`CDIN_SEARCH_{FORWARD, BACKWARD}`,

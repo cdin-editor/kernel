@@ -1,4 +1,36 @@
-name: cdin-kernel
-version: 0.1.0
-description: Generic text engine with a C ABI
-license: GPL-3.0-or-later
+version: 1
+
+project:
+  type: generic
+  kind: library
+
+rules:
+  readme: error
+  license: error
+  src_folder: error
+  tests_folder: error
+  scripts_folder: info
+  makefile: error
+  ci_config: error
+  workflow_ci: error
+  workflow_release: info
+  docs_folder: info
+  contributing: info
+  security: info
+  pull_request_template: info
+  issue_templates: info
+  editorconfig: info
+  gitattributes: info
+
+ignore:
+  - .git/
+  - .deps/
+  - build/
+  - dist/
+  - coverage/
+  - .pipeline/
+  - .psx/
+
+fix:
+  interactive: false
+  backup: false

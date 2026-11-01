@@ -10,6 +10,7 @@ cdin_status cdin_doc_create(cdin_kernel *k, const uint8_t *bytes, size_t len, cd
     k_lock(k);
     st = doc_create_locked(k, bytes, len, out);
     k_unlock(k);
+    if (st == CDIN_OK) K_LOG_DEBUG(k, "document created");
     return st;
 }
 
@@ -25,6 +26,7 @@ cdin_status cdin_doc_close(cdin_kernel *k, cdin_doc dh)
     if (st == CDIN_OK) st = doc_close_locked(k, d, &wl);
     k_unlock(k);
     wake_run(&wl);
+    if (st == CDIN_OK) K_LOG_DEBUG(k, "document closed");
     return st;
 }
 
@@ -41,6 +43,7 @@ cdin_status cdin_doc_reload(cdin_kernel *k, cdin_doc dh, const cdin_reload_reque
     if (st == CDIN_OK) { details_clear(out); st = doc_reload_locked(k, d, req, out, &wl); }
     k_unlock(k);
     wake_run(&wl);
+    if (st == CDIN_OK) K_LOG_DEBUG(k, "document reloaded");
     return st;
 }
 

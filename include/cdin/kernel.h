@@ -25,6 +25,8 @@
  * - `cdin_kernel_destroy()` must never run concurrently with another call;
  *   no handle may be used after the kernel is destroyed.
  * - Log and wakeup callbacks are invoked without the kernel lock held.
+ *   Do not destroy the kernel from either callback. A log callback must not
+ *   replace logger options or race with kernel destruction.
  *
  * ABI compatibility: numeric status/enum values, public structure layouts,
  * and function signatures are fixed for ABI major version 1.
@@ -52,10 +54,10 @@ extern "C" {
 #endif
 
 #define CDIN_KERNEL_ABI_MAJOR 1u
-#define CDIN_KERNEL_ABI_MINOR 0u
+#define CDIN_KERNEL_ABI_MINOR 1u
 #define CDIN_KERNEL_ABI_PATCH 0u
 #define CDIN_KERNEL_SPEC_VERSION_MAJOR 1u
-#define CDIN_KERNEL_SPEC_VERSION_MINOR 0u
+#define CDIN_KERNEL_SPEC_VERSION_MINOR 1u
 #define CDIN_KERNEL_SPEC_VERSION_PATCH 0u
 
 /**
@@ -131,11 +133,13 @@ static inline cdin_source cdin_src_snap(cdin_snapshot snapshot)
  * Caller-provided services
  * -------------------------------------------------------------------------- */
 /**
- * @brief Allocation callbacks used for all memory owned by a kernel.
+ * @brief Allocation callbacks used by the kernel's core data structures.
  *
- * `alloc` receives a size of at least one byte. `realloc` receives the exact
- * old and new allocation sizes, and `free` receives the exact current size.
- * All three callbacks and their context must remain valid until destruction.
+ * The optional m-mdy-m/log.c adapter manages its opaque internal state with
+ * that dependency's allocator. `alloc` receives a size of at least one byte;
+ * `realloc` receives the exact old and new sizes; `free` receives the exact
+ * current size. All three callbacks and their context must remain valid until
+ * destruction.
  */
 typedef struct cdin_allocator {
     uint32_t struct_size;
@@ -158,11 +162,64 @@ typedef struct cdin_lock_vtable {
     void (*unlock)(void *ctx);
 } cdin_lock_vtable;
 
+/**
+ * Log severity values delivered to `cdin_log_sink.log`.
+ *
+ * The original values remain stable for ABI 1 consumers: ERROR=0, WARN=1,
+ * INFO=2. DEBUG, TRACE and FATAL are additive values. The logger's minimum
+ * level is configured separately through `cdin_log_options`.
+ */
+typedef int32_t cdin_log_level;
+enum {
+    CDIN_LOG_ERROR = 0,
+    CDIN_LOG_WARN = 1,
+    CDIN_LOG_INFO = 2,
+    CDIN_LOG_DEBUG = 3,
+    CDIN_LOG_TRACE = 4,
+    CDIN_LOG_FATAL = 5
+};
+
+/** Console destinations for formatted kernel records. A configured callback
+ * receives every record as well; CALLBACK means no console output and requires
+ * config.log.log to be set. BOTH writes to both stdout and stderr. */
+typedef uint32_t cdin_log_output;
+enum {
+    CDIN_LOG_OUTPUT_CALLBACK = 0,
+    CDIN_LOG_OUTPUT_STDERR = 1,
+    CDIN_LOG_OUTPUT_STDOUT = 2,
+    CDIN_LOG_OUTPUT_BOTH = 3
+};
+
+/** Metadata fields that may be included in each formatted kernel record. */
+enum {
+    CDIN_LOG_F_TIMESTAMP = 1u << 0,
+    CDIN_LOG_F_LAYER = 1u << 1,
+    CDIN_LOG_F_COMPONENT = 1u << 2,
+    CDIN_LOG_F_SOURCE = 1u << 3,
+    CDIN_LOG_F_FUNCTION = 1u << 4
+};
+#define CDIN_LOG_F_DEFAULT (CDIN_LOG_F_TIMESTAMP | CDIN_LOG_F_LAYER | CDIN_LOG_F_COMPONENT)
+#define CDIN_LOG_DEFAULT_MAX_MESSAGE_BYTES (16u * 1024u)
+#define CDIN_LOG_MAX_MESSAGE_BYTES (1024u * 1024u)
+
+/**
+ * Configure the optional m-mdy-m/log.c adapter. Initialize with
+ * `cdin_log_options_init`; zero fields are not interpreted as defaults.
+ * The `[KERNEL]` record prefix is always added and cannot be disabled.
+ */
+typedef struct cdin_log_options {
+    uint32_t struct_size;
+    uint32_t min_level;       /* CDIN_LOG_*; default INFO */
+    uint32_t output;          /* cdin_log_output; default CALLBACK */
+    uint32_t format_flags;    /* CDIN_LOG_F_* mask; default timestamp/layer/component */
+    uint32_t max_message_bytes; /* 1..CDIN_LOG_MAX_MESSAGE_BYTES */
+} cdin_log_options;
+
 /** Optional log callback for diagnostic messages produced by the kernel. */
 typedef struct cdin_log_sink {
     uint32_t struct_size;
     void *ctx;
-    /* level: 0 = error, 1 = warning, 2 = info. `msg` is UTF-8 with explicit length. */
+    /* `level` is a cdin_log_level; `msg` starts with `[KERNEL]`. `len` excludes its trailing NUL. */
     void (*log)(void *ctx, int level, const char *msg, size_t len);
 } cdin_log_sink;
 
@@ -200,8 +257,11 @@ enum {
  *
  * Set `struct_size`, `abi_major`, and the allocator callbacks. Initialize the
  * structure to zero first so reserved fields and default limits stay zero.
- * The lock and log services are optional. A zero limit selects its documented
- * default; `max_edit_size == 0` follows `max_document_size`.
+ * The lock and log services are optional. The optional logging adapter uses
+ * the private allocator of its separately installed logging dependency; the
+ * supplied allocator governs the kernel's own data structures. A zero limit
+ * selects its documented default; `max_edit_size == 0` follows
+ * `max_document_size`.
  */
 typedef struct cdin_kernel_config {
     uint32_t struct_size;
@@ -269,6 +329,22 @@ CDIN_API cdin_status cdin_unicode_version(uint32_t *major, uint32_t *minor, uint
  * Set `struct_size` on every nested service structure and set `abi_major` to
  * `CDIN_KERNEL_ABI_MAJOR`.
  */
+CDIN_API cdin_status cdin_log_options_init(cdin_log_options *options);
+/**
+ * Configure the kernel logger. Call before sharing the kernel with worker
+ * threads; replacing logger options must not race with active logging calls.
+ * A callback-only configuration requires `config.log.log`; STDERR/STDOUT
+ * may be used without a callback. A configured callback receives records in
+ * every output mode. BOTH writes to both console streams.
+ */
+CDIN_API cdin_status cdin_kernel_set_log_options(cdin_kernel *k,
+                                                  const cdin_log_options *options);
+/** Change only the minimum severity without rebuilding the logger. */
+CDIN_API cdin_status cdin_kernel_set_log_level(cdin_kernel *k, cdin_log_level level);
+/** Emit a tagged kernel record for kernel extensions and platform adapters. */
+CDIN_API cdin_status cdin_kernel_log(cdin_kernel *k, cdin_log_level level,
+                                      const char *component, const char *message);
+
 CDIN_API cdin_status cdin_kernel_create(const cdin_kernel_config *cfg, cdin_kernel **out);
 /**
  * Destroy a kernel and release all resources it owns.

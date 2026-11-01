@@ -1,0 +1,4 @@
+# External dependency pins used by scripts/install-deps.sh.
+M_MDY_M_LOG_REPOSITORY="https://github.com/m-mdy-m/log.c.git"
+M_MDY_M_LOG_COMMIT="c9b53e9901dc7103eb50be282ae055fe16e98f9a"
+M_MDY_M_LOG_VERSION="0.1.0"

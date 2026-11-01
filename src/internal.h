@@ -137,10 +137,14 @@ typedef struct subscriber {
 } subscriber;
 
 /* ---- kernel -------------------------------------------------------------------- */
+struct mmlog_logger; /* opaque third-party logger handle */
+
 struct cdin_kernel {
     cdin_allocator al;
     cdin_lock_vtable lock;
     cdin_log_sink logs;
+    struct mmlog_logger *logger; /* Optional m-mdy-m/log.c adapter for logs. */
+    cdin_log_options log_options;
     uint64_t max_documents, max_document_size, max_edit_size, max_undo_memory;
     uint64_t max_blob_size, max_snapshots, max_subscribers, notif_capacity, default_steps;
     int stopped;
@@ -170,7 +174,14 @@ int k_mul(size_t a, size_t b, size_t *out);
 /* ---- kernel.c and core.c ------------------------------------------------------- */
 void k_lock(cdin_kernel *k);
 void k_unlock(cdin_kernel *k);
-void k_log(cdin_kernel *k, int level, const char *msg);
+void k_log_at(cdin_kernel *k, cdin_log_level level, const char *msg,
+              const char *file, uint32_t line, const char *function);
+#define K_LOG_TRACE(k, msg) k_log_at((k), CDIN_LOG_TRACE, (msg), __FILE__, (uint32_t)__LINE__, __func__)
+#define K_LOG_DEBUG(k, msg) k_log_at((k), CDIN_LOG_DEBUG, (msg), __FILE__, (uint32_t)__LINE__, __func__)
+#define K_LOG_INFO(k, msg)  k_log_at((k), CDIN_LOG_INFO,  (msg), __FILE__, (uint32_t)__LINE__, __func__)
+#define K_LOG_WARN(k, msg)  k_log_at((k), CDIN_LOG_WARN,  (msg), __FILE__, (uint32_t)__LINE__, __func__)
+#define K_LOG_ERROR(k, msg) k_log_at((k), CDIN_LOG_ERROR, (msg), __FILE__, (uint32_t)__LINE__, __func__)
+#define K_LOG_FATAL(k, msg) k_log_at((k), CDIN_LOG_FATAL, (msg), __FILE__, (uint32_t)__LINE__, __func__)
 /* Validates a caller struct: declared size >= known, bytes beyond known are zero. */
 cdin_status check_struct(const void *p, size_t known_size, size_t min_size);
 

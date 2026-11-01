@@ -8,6 +8,8 @@
  * NOT closed: reads and cdin_doc_close keep working, so a caller can finish its
  * teardown in any order; cdin_kernel_destroy frees any leftovers. */
 #include "internal.h"
+#include <m-mdy-m/log.h>
+#include <stdio.h>
 
 /* ---- version / feature queries --------------------------------------------- */
 const char *cdin_status_name(cdin_status s)
@@ -61,9 +63,235 @@ cdin_status cdin_unicode_version(uint32_t *major, uint32_t *minor, uint32_t *pat
 void k_lock(cdin_kernel *k) { if (k->lock.lock) k->lock.lock(k->lock.ctx); }
 void k_unlock(cdin_kernel *k) { if (k->lock.unlock) k->lock.unlock(k->lock.ctx); }
 
-void k_log(cdin_kernel *k, int level, const char *msg)
+#define CDIN_KERNEL_LOG_PREFIX "[KERNEL] "
+
+static int valid_cdin_log_level(cdin_log_level level)
 {
-    if (k->logs.log) k->logs.log(k->logs.ctx, level, msg, strlen(msg));
+    return level >= CDIN_LOG_ERROR && level <= CDIN_LOG_FATAL;
+}
+
+static int32_t mmlog_level_from_cdin(cdin_log_level level)
+{
+    switch (level) {
+    case CDIN_LOG_TRACE: return MMLLOG_LEVEL_TRACE;
+    case CDIN_LOG_DEBUG: return MMLLOG_LEVEL_DEBUG;
+    case CDIN_LOG_INFO:  return MMLLOG_LEVEL_INFO;
+    case CDIN_LOG_WARN:  return MMLLOG_LEVEL_WARN;
+    case CDIN_LOG_ERROR: return MMLLOG_LEVEL_ERROR;
+    case CDIN_LOG_FATAL: return MMLLOG_LEVEL_FATAL;
+    default: return MMLLOG_LEVEL_ERROR;
+    }
+}
+
+static cdin_log_level cdin_level_from_mmlog(int32_t level)
+{
+    switch (level) {
+    case MMLLOG_LEVEL_TRACE: return CDIN_LOG_TRACE;
+    case MMLLOG_LEVEL_DEBUG: return CDIN_LOG_DEBUG;
+    case MMLLOG_LEVEL_INFO:  return CDIN_LOG_INFO;
+    case MMLLOG_LEVEL_WARN:  return CDIN_LOG_WARN;
+    case MMLLOG_LEVEL_ERROR: return CDIN_LOG_ERROR;
+    case MMLLOG_LEVEL_FATAL: return CDIN_LOG_FATAL;
+    default: return CDIN_LOG_ERROR;
+    }
+}
+
+static uint32_t mmlog_format_flags_from_cdin(uint32_t flags)
+{
+    uint32_t result = 0;
+    if (flags & CDIN_LOG_F_TIMESTAMP) result |= MMLLOG_F_TIMESTAMP;
+    if (flags & CDIN_LOG_F_LAYER) result |= MMLLOG_F_LAYER;
+    if (flags & CDIN_LOG_F_COMPONENT) result |= MMLLOG_F_COMPONENT;
+    if (flags & CDIN_LOG_F_SOURCE) result |= MMLLOG_F_SOURCE;
+    if (flags & CDIN_LOG_F_FUNCTION) result |= MMLLOG_F_FUNCTION;
+    return result;
+}
+
+/* m-mdy-m/log.c calls sinks after releasing its own lock. The kernel callback
+ * contract also requires that user code is never called under the kernel lock.
+ * The prefix is added here (rather than stored as metadata) so every adapter,
+ * including stdout/stderr and host callbacks, sees the same unambiguous tag. */
+static void cdin_log_bridge(void *user_data, int32_t level,
+                            const char *line, size_t line_length)
+{
+    cdin_kernel *k = (cdin_kernel *)user_data;
+    const size_t prefix_length = sizeof CDIN_KERNEL_LOG_PREFIX - 1u;
+    size_t total_length;
+    char *buffer;
+    FILE *stream = NULL;
+
+    if (k == NULL || line == NULL) return;
+    if (line_length > SIZE_MAX - prefix_length - 1u) return;
+    total_length = prefix_length + line_length;
+    /* The injected allocator may be shared with ordinary kernel calls. Hold
+     * the kernel lock only around allocation/free, never around user sinks. */
+    k_lock(k);
+    buffer = (char *)k->al.alloc(k->al.ctx, total_length + 1u);
+    k_unlock(k);
+    if (buffer == NULL) return; /* diagnostics must never break a kernel operation */
+
+    memcpy(buffer, CDIN_KERNEL_LOG_PREFIX, prefix_length);
+    if (line_length != 0u) memcpy(buffer + prefix_length, line, line_length);
+    buffer[total_length] = '\0';
+
+    if (k->logs.log != NULL)
+        k->logs.log(k->logs.ctx, (int)cdin_level_from_mmlog(level), buffer, total_length);
+
+    if (k->log_options.output == CDIN_LOG_OUTPUT_STDERR ||
+        k->log_options.output == CDIN_LOG_OUTPUT_BOTH) {
+        stream = stderr;
+        (void)fwrite(buffer, 1u, total_length, stream);
+        (void)fputc('\n', stream);
+        (void)fflush(stream);
+    }
+    if (k->log_options.output == CDIN_LOG_OUTPUT_STDOUT ||
+        k->log_options.output == CDIN_LOG_OUTPUT_BOTH) {
+        stream = stdout;
+        (void)fwrite(buffer, 1u, total_length, stream);
+        (void)fputc('\n', stream);
+        (void)fflush(stream);
+    }
+
+    k_lock(k);
+    k->al.free(k->al.ctx, buffer, total_length + 1u);
+    k_unlock(k);
+}
+
+static cdin_status create_logger(cdin_kernel *k, const cdin_log_options *options,
+                                 mmlog_logger_t **out_logger)
+{
+    mmlog_logger_config_t config;
+    mmlog_logger_t *logger = NULL;
+    mmlog_status_t status;
+
+    if (k == NULL || options == NULL || out_logger == NULL) return CDIN_INVALID_ARGUMENT;
+    if (options->output == CDIN_LOG_OUTPUT_CALLBACK && k->logs.log == NULL)
+        return CDIN_INVALID_ARGUMENT;
+
+    status = mmlog_logger_config_init(&config);
+    if (status != MMLLOG_OK) return status == MMLLOG_ENOMEM ? CDIN_NO_MEMORY : CDIN_INTERNAL;
+    config.min_level = (uint32_t)mmlog_level_from_cdin((cdin_log_level)options->min_level);
+    config.output = MMLLOG_OUTPUT_NONE; /* the bridge owns prefixed console/callback output */
+    config.color_mode = MMLLOG_COLOR_NEVER; /* stable plain text for IDE/runtime consumers */
+    config.format_flags = mmlog_format_flags_from_cdin(options->format_flags);
+    config.max_message_bytes = options->max_message_bytes;
+
+    status = mmlog_logger_create(&config, &logger);
+    if (status != MMLLOG_OK) return status == MMLLOG_ENOMEM ? CDIN_NO_MEMORY : CDIN_INTERNAL;
+    status = mmlog_logger_add_callback(logger, cdin_log_bridge, k, MMLLOG_LEVEL_TRACE);
+    if (status != MMLLOG_OK) {
+        mmlog_logger_destroy(logger);
+        return status == MMLLOG_ENOMEM ? CDIN_NO_MEMORY : CDIN_INTERNAL;
+    }
+    *out_logger = logger;
+    return CDIN_OK;
+}
+
+cdin_status cdin_log_options_init(cdin_log_options *options)
+{
+    if (options == NULL) return CDIN_INVALID_ARGUMENT;
+    memset(options, 0, sizeof *options);
+    options->struct_size = (uint32_t)sizeof *options;
+    options->min_level = CDIN_LOG_INFO;
+    options->output = CDIN_LOG_OUTPUT_CALLBACK;
+    options->format_flags = CDIN_LOG_F_DEFAULT;
+    options->max_message_bytes = CDIN_LOG_DEFAULT_MAX_MESSAGE_BYTES;
+    return CDIN_OK;
+}
+
+cdin_status cdin_kernel_set_log_options(cdin_kernel *k, const cdin_log_options *options)
+{
+    cdin_status status;
+    cdin_log_options copy;
+    mmlog_logger_t *new_logger = NULL;
+    mmlog_logger_t *old_logger;
+    const uint32_t allowed_flags = CDIN_LOG_F_TIMESTAMP | CDIN_LOG_F_LAYER |
+                                   CDIN_LOG_F_COMPONENT | CDIN_LOG_F_SOURCE |
+                                   CDIN_LOG_F_FUNCTION;
+
+    if (k == NULL) return CDIN_INVALID_ARGUMENT;
+    status = check_struct(options, sizeof *options, sizeof *options);
+    if (status != CDIN_OK) return status;
+    memcpy(&copy, options, sizeof copy);
+    if (!valid_cdin_log_level((cdin_log_level)copy.min_level) ||
+        copy.output > CDIN_LOG_OUTPUT_BOTH ||
+        (copy.format_flags & ~allowed_flags) != 0u ||
+        copy.max_message_bytes == 0u || copy.max_message_bytes > CDIN_LOG_MAX_MESSAGE_BYTES)
+        return CDIN_INVALID_ARGUMENT;
+
+    status = create_logger(k, &copy, &new_logger);
+    if (status != CDIN_OK) return status;
+
+    /* Configure before sharing the kernel with worker threads (documented API contract). */
+    old_logger = k->logger;
+    k->logger = new_logger;
+    k->log_options = copy;
+    if (old_logger != NULL) mmlog_logger_destroy(old_logger);
+    K_LOG_INFO(k, "logger options configured");
+    return CDIN_OK;
+}
+
+cdin_status cdin_kernel_set_log_level(cdin_kernel *k, cdin_log_level level)
+{
+    mmlog_status_t status;
+    cdin_status result;
+    if (k == NULL || !valid_cdin_log_level(level)) return CDIN_INVALID_ARGUMENT;
+    k_lock(k);
+    if (k->logger == NULL) {
+        k_unlock(k);
+        return CDIN_UNSUPPORTED;
+    }
+    status = mmlog_logger_set_min_level(k->logger, mmlog_level_from_cdin(level));
+    if (status == MMLLOG_OK) {
+        k->log_options.min_level = (uint32_t)level;
+        result = CDIN_OK;
+    } else {
+        result = status == MMLLOG_EINVAL ? CDIN_INVALID_ARGUMENT : CDIN_INTERNAL;
+    }
+    k_unlock(k);
+    return result;
+}
+
+static cdin_status emit_kernel_log(cdin_kernel *k, cdin_log_level level,
+                                   const char *component, const char *message,
+                                   const char *file, uint32_t line, const char *function)
+{
+    mmlog_event_t event;
+    mmlog_status_t status;
+    size_t message_length;
+
+    if (k == NULL || message == NULL || !valid_cdin_log_level(level))
+        return CDIN_INVALID_ARGUMENT;
+    if (k->logger == NULL) return CDIN_UNSUPPORTED;
+    message_length = strlen(message);
+    status = mmlog_event_init(&event);
+    if (status != MMLLOG_OK) return status == MMLLOG_ENOMEM ? CDIN_NO_MEMORY : CDIN_INTERNAL;
+    event.level = mmlog_level_from_cdin(level);
+    event.layer = "kernel";
+    event.component = (component != NULL && component[0] != '\0') ? component : "cdin-kernel";
+    event.file = file;
+    event.line = line;
+    event.function = function;
+    event.message = message;
+    event.message_length = message_length;
+    status = mmlog_logger_write(k->logger, &event);
+    if (status == MMLLOG_OK) return CDIN_OK;
+    if (status == MMLLOG_ENOMEM) return CDIN_NO_MEMORY;
+    if (status == MMLLOG_EINVAL || status == MMLLOG_ELIMIT) return CDIN_INVALID_ARGUMENT;
+    return CDIN_INTERNAL;
+}
+
+cdin_status cdin_kernel_log(cdin_kernel *k, cdin_log_level level,
+                            const char *component, const char *message)
+{
+    return emit_kernel_log(k, level, component, message, NULL, 0u, NULL);
+}
+
+void k_log_at(cdin_kernel *k, cdin_log_level level, const char *msg,
+              const char *file, uint32_t line, const char *function)
+{
+    if (k == NULL || k->logger == NULL || msg == NULL) return;
+    (void)emit_kernel_log(k, level, "cdin-kernel", msg, file, line, function);
 }
 
 /* ---- caller struct validation (ABI-003) ---------------------------------- */
@@ -111,6 +339,15 @@ cdin_status cdin_kernel_create(const cdin_kernel_config *cfg, cdin_kernel **out)
     k->al = cfg->allocator;
     k->lock = cfg->lock;
     k->logs = cfg->log;
+    (void)cdin_log_options_init(&k->log_options);
+    if (k->logs.log != NULL) {
+        st = create_logger(k, &k->log_options, &k->logger);
+        if (st != CDIN_OK) {
+            cdin_allocator allocator = k->al;
+            allocator.free(allocator.ctx, k, sizeof *k);
+            return st;
+        }
+    }
     k->max_documents = or_default(cfg->max_documents, CDIN_DEFAULT_MAX_DOCUMENTS);
     k->max_document_size = or_default(cfg->max_document_size, CDIN_DEFAULT_MAX_DOCUMENT_SIZE);
     if (k->max_document_size > max_size_cap) k->max_document_size = max_size_cap;
@@ -127,6 +364,7 @@ cdin_status cdin_kernel_create(const cdin_kernel_config *cfg, cdin_kernel **out)
     k->default_steps = or_default(cfg->default_search_steps, CDIN_DEFAULT_SEARCH_STEPS);
     k->seq = 0;
     *out = k;
+    K_LOG_INFO(k, "kernel initialized");
     return CDIN_OK;
 }
 
@@ -134,7 +372,7 @@ cdin_status cdin_kernel_destroy(cdin_kernel *k)
 {
     if (!k) return CDIN_INVALID_ARGUMENT;
     if (k->snaps.live > 0) {
-        k_log(k, 1, "kernel destroyed with live snapshots; releasing them");
+        K_LOG_WARN(k, "kernel destroyed with live snapshots; releasing them");
     }
     for (size_t i = 0; i < k->docs.used; i++) {
         doc *d = k->docs.slots[i].item;
@@ -161,6 +399,7 @@ cdin_status cdin_kernel_destroy(cdin_kernel *k)
     k_free(k, k->snaps.slots, k->snaps.cap * sizeof(pool_slot));
     k_free(k, k->subs.slots, k->subs.cap * sizeof(pool_slot));
     k_free(k, k->txns.slots, k->txns.cap * sizeof(pool_slot));
+    if (k->logger != NULL) mmlog_logger_destroy(k->logger);
     {
         cdin_allocator al = k->al;
         al.free(al.ctx, k, sizeof *k);
@@ -171,6 +410,7 @@ cdin_status cdin_kernel_destroy(cdin_kernel *k)
 cdin_status cdin_kernel_last_sequence(cdin_kernel *k, uint64_t *out)
 {
     if (!k || !out) return CDIN_INVALID_ARGUMENT;
+    K_LOG_TRACE(k, "sequence queried");
     k_lock(k);
     *out = k->seq;
     k_unlock(k);
@@ -184,6 +424,8 @@ cdin_status cdin_kernel_shutdown(cdin_kernel *k, cdin_shutdown_mode mode)
 {
     if (!k) return CDIN_INVALID_ARGUMENT;
     if (mode != CDIN_SHUTDOWN_GRACEFUL && mode != CDIN_SHUTDOWN_ABORT) return CDIN_INVALID_ARGUMENT;
+    K_LOG_INFO(k, "kernel shutdown started");
+    K_LOG_DEBUG(k, mode == CDIN_SHUTDOWN_ABORT ? "shutdown mode=abort" : "shutdown mode=graceful");
     k_lock(k);
     k->stopped = 1;                    /* new mutations now fail with CDIN_SHUTDOWN */
     for (size_t i = 0; i < k->docs.used; i++) {
@@ -196,5 +438,6 @@ cdin_status cdin_kernel_shutdown(cdin_kernel *k, cdin_shutdown_mode mode)
         }
     }
     k_unlock(k);
+    K_LOG_TRACE(k, "kernel shutdown completed");
     return CDIN_OK;
 }

@@ -5,6 +5,18 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-11-01
+
+### Added
+- Add the full m-mdy-m/log.c severity set to the kernel logging adapter: ERROR, WARN, INFO, DEBUG, TRACE and FATAL. The original ERROR/WARN/INFO callback values remain unchanged.
+- Prefix every kernel log line with `[KERNEL]`; emit INFO lifecycle records, DEBUG document/transaction events, TRACE diagnostics and WARN resource warnings, with ERROR/FATAL available to extensions. Add configurable severity threshold, output destination, metadata flags and message bounds.
+- Add `cdin_kernel_log` for tagged extension records and options/threshold APIs for runtime logger configuration.
+- Add a Pipeline task graph and reusable CI, benchmark and release workflows; add compact PSX checks and project-specific issue/PR templates.
+- Add a gix flow initializer and branch configuration template.
+
+### Compatibility
+- Increment the public C ABI to 1.1.0 for the additive logging API. Existing `cdin_kernel_config` and the original ERROR/WARN/INFO numeric values are unchanged.
+
 ## [1.1.0] - 2026-10-20
 
 ### Added

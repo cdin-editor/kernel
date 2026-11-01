@@ -35,6 +35,8 @@ case "$host" in
       -File "$(cygpath -w "$package_root/install.ps1")" \
       -Prefix "$(cygpath -w "$prefix")"
     [[ -f "$prefix/include/cdin/kernel.h" ]] || { echo "installed public header missing" >&2; exit 1; }
+    [[ -f "$prefix/include/m-mdy-m/log.h" ]] || { echo "logger public header missing" >&2; exit 1; }
+    [[ -f "$prefix/lib/libm-mdy-m-log.a" ]] || { echo "logger static library missing" >&2; exit 1; }
     [[ -f "$prefix/lib/libcdin_kernel.a" ]] || { echo "installed static library missing" >&2; exit 1; }
     [[ -f "$prefix/lib/libcdin_kernel.dll.a" ]] || { echo "installed import library missing" >&2; exit 1; }
     [[ -f "$prefix/bin/cdin_kernel.dll" ]] || { echo "installed runtime DLL missing" >&2; exit 1; }

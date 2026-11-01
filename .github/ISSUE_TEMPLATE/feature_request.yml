@@ -1,24 +1,16 @@
-name: Feature Request
-description: New API, capability or improvement
+name: Kernel improvement
+description: A focused API, behavior, or performance proposal
 title: "[FEATURE] "
-labels: ["enhancement"]
 body:
-  - type: input
-    id: requirement
+  - type: textarea
+    id: problem
     attributes:
-      label: Related requirement ID
-      placeholder: DOC-001, EDIT-002
+      label: Problem to solve
     validations:
       required: true
   - type: textarea
-    id: description
+    id: proposal
     attributes:
-      label: Description
-    validations:
-      required: true
-  - type: textarea
-    id: motivation
-    attributes:
-      label: Motivation
+      label: Proposed kernel change
     validations:
       required: true

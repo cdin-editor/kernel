@@ -35,7 +35,9 @@ while (($#)); do
 done
 
 package_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-for required in "$package_root/include/cdin/kernel.h" "$package_root/lib/libcdin_kernel.a" "$package_root/lib/pkgconfig/cdin-kernel.pc"; do
+for required in "$package_root/include/cdin/kernel.h" "$package_root/include/m-mdy-m/log.h" \
+                "$package_root/lib/libcdin_kernel.a" "$package_root/lib/libm-mdy-m-log.a" \
+                "$package_root/lib/pkgconfig/cdin-kernel.pc" "$package_root/lib/pkgconfig/m-mdy-m-log.pc"; do
   if [[ ! -f "$required" ]]; then
     echo "release archive is incomplete; missing $required" >&2
     exit 1

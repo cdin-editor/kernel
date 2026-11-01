@@ -1,6 +1,6 @@
 # User guide
 
-This guide covers the public behavior of `cdin-kernel` C ABI 1.0.0. It is written
+This guide covers the public behavior of `cdin-kernel` C ABI 1.1.0. It is written
 for an application programmer who stores text, applies edits, undoes them,
 searches, and reacts to changes. Every function name, default, and error
 condition below was checked against `include/cdin/kernel.h` and the
@@ -60,16 +60,20 @@ It does not provide:
 - a cursor or selection model (the application owns cursors and asks the
   library for boundaries and positions).
 
-The library is C11, has no required external dependencies, allocates only
-through the allocator the application supplies, and never spawns a thread or a
-process.
+The kernel core is C11. Its optional logging adapter uses the separately
+installed `m-mdy-m/log.c` dependency; no logger instance is created unless the
+application configures a log sink or selects a console destination. The kernel core allocates through the
+application-supplied allocator and never spawns a thread or a process. The
+logging dependency owns its own small opaque logger state through its internal
+allocator.
 
 ## 2. Core ideas
 
 ### 2.1 Kernel
 
-A kernel is the owner of all library state: the document table, undo memory,
-snapshots, transactions, subscriptions, and the sequence counter. Create one
+A kernel owns its core state: the document table, undo memory, snapshots,
+transactions, subscriptions, and the sequence counter. When logging is
+configured, it also owns one opaque logger instance managed by `m-mdy-m/log.c`. Create one
 with `cdin_kernel_create` and destroy it with `cdin_kernel_destroy`. All other
 calls take the kernel as their first argument.
 
@@ -175,10 +179,9 @@ misreading a struct. For `cdin_edit_result`, `cdin_search_result`, and
 `cdin_eol_info`, the caller sets `struct_size` before the call and the library
 writes the rest.
 
-The nested `cdin_allocator`, `cdin_lock_vtable`, and `cdin_log_vtable` are
-special: in ABI 1.0.0 each must have `struct_size` equal to its exact size, or
-zero for the optional lock and log tables. The ABI reference lists the rule for
-every struct.
+The nested `cdin_allocator`, `cdin_lock_vtable`, and `cdin_log_sink` are
+special: each must have `struct_size` equal to its exact size, or zero for the
+optional lock and log tables. The ABI reference lists the rule for every struct.
 
 ### 2.8 Sequence numbers
 
@@ -332,7 +335,13 @@ lock and log contexts are not copied; they must outlive the kernel.
 
 ### 4.2 Allocator contract
 
-The three callbacks replace every allocation the library makes:
+The three callbacks govern allocations made by the kernel's own data structures.
+The optional `m-mdy-m/log.c` logger is an independently managed library
+instance and owns/frees its private internal state through its own allocator;
+that state is created only when logging is enabled and is released by
+`cdin_kernel_destroy()`.
+
+The three callbacks replace every allocation made by the kernel core:
 
 ```c
 typedef struct cdin_allocator {
@@ -393,11 +402,55 @@ typedef struct cdin_log_sink {
 } cdin_log_sink;
 ```
 
-`level` is 0 for errors, 1 for warnings, and 2 for information. `message` is
-UTF-8 and is not NUL-terminated; use `len`. The pointer is valid only for the
-duration of the call. Log callbacks run without the kernel lock. In ABI 1.0.0
-the kernel emits one warning: destroying a kernel that still has live
-snapshots.
+The original numeric values remain stable: `CDIN_LOG_ERROR` is 0,
+`CDIN_LOG_WARN` is 1, and `CDIN_LOG_INFO` is 2. The extended levels are
+`CDIN_LOG_DEBUG` (3), `CDIN_LOG_TRACE` (4), and `CDIN_LOG_FATAL` (5).
+`message` is UTF-8, NUL-terminated for convenience, and `len` is the authoritative
+byte length (excluding the terminator). The pointer is valid only for the duration
+of the callback. Log callbacks run without the kernel lock.
+
+All kernel records start with **`[KERNEL]`**, then the formatted severity and
+metadata. `layer=kernel` identifies the layer; the component defaults to
+`cdin-kernel`, and extension calls may supply a component such as `memory` or
+`scheduler`. This fixed prefix makes kernel records distinguishable from
+`[FRONTEND]`, `[BACKEND]`, runtime, and application logs in a combined stream.
+The adapter uses the separately installed
+[m-mdy-m/log.c](https://github.com/m-mdy-m/log.c) library; its formatter escapes
+message control bytes to preserve one record per line.
+
+Use `cdin_log_options_init` and `cdin_kernel_set_log_options` to configure the
+minimum level, output destination, metadata fields, and maximum message size.
+The default threshold is INFO; DEBUG and TRACE are available by lowering the
+threshold. Output may be callback-only, stderr, stdout, or both console
+streams. If a callback was supplied in `cdin_kernel_config`, it receives the
+same prefixed line in every output mode. `cdin_kernel_set_log_level` changes
+the threshold without rebuilding the logger. `cdin_kernel_log` lets a kernel extension emit a record with its own component
+name while preserving the `[KERNEL]` tag.
+
+A small setup example enables DEBUG output and source metadata:
+
+```c
+cdin_log_options log_options;
+if (cdin_log_options_init(&log_options) != CDIN_OK) return CDIN_INTERNAL;
+log_options.min_level = CDIN_LOG_DEBUG;
+log_options.output = CDIN_LOG_OUTPUT_STDERR;
+log_options.format_flags = CDIN_LOG_F_DEFAULT | CDIN_LOG_F_SOURCE | CDIN_LOG_F_FUNCTION;
+log_options.max_message_bytes = 8192u;
+if (cdin_kernel_set_log_options(kernel, &log_options) != CDIN_OK) return CDIN_INTERNAL;
+
+(void)cdin_kernel_log(kernel, CDIN_LOG_DEBUG, "memory", "allocator initialized");
+```
+
+No logger is created by default when no callback is supplied. A console-only
+logger can be created later with `cdin_kernel_set_log_options`; a configured
+callback receives the same line in every output mode. Replacing logger options
+must happen before the kernel is shared with worker threads and must not race
+with active logging. Failure to allocate a temporary prefixed line drops that
+record rather than failing the kernel operation. The kernel emits INFO for
+initialization/shutdown, DEBUG for document and transaction lifecycle events,
+TRACE for sequence/shutdown diagnostics, and WARN if it is destroyed with live
+snapshots. ERROR and FATAL are also available to extension code through
+`cdin_kernel_log`.
 
 ### 4.4 Creating a kernel
 
@@ -432,7 +485,8 @@ On failure `*out` is untouched.
 
 `cdin_kernel_destroy` frees every document, transaction, snapshot, subscriber,
 history unit, and cached index owned by the kernel, then frees the kernel
-itself. It emits no notifications and performs no I/O.
+itself. It emits no notifications and does not access document files; the
+configured logger may emit the documented lifecycle or live-snapshot warning.
 
 - It must not run concurrently with any other call on the same kernel, even
   when a lock vtable is configured.
@@ -1705,8 +1759,8 @@ threading rules. All of them concern the single lock and the caller callbacks.
 | `cdin_kernel_shutdown` | Serialized by the lock like any public call; it waits for in-flight calls to finish and then aborts still-pending transactions. |
 | `cdin_search` | The scan releases the lock while reading the pinned bytes, so other threads can edit a different document (with a lock vtable) while one thread searches. |
 | Allocator callbacks | Are invoked inside calls, while the caller's lock is held. They must not call the kernel back. |
-| Log callback | Invoked without the lock held. |
-| Wakeup callback | Invoked without the lock held, as noted in 13.1. |
+| Log callback | Invoked without the lock held. It may run concurrently on writer threads; do not destroy the kernel or replace logger options from it. |
+| Wakeup callback | Invoked without the lock held, as noted in 13.1. Do not destroy the kernel from it. |
 
 A wakeup callback runs on whatever thread performed the mutation. Keep it
 minimal: copy the event count or set a flag and wake a worker. Do not perform

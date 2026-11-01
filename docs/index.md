@@ -7,7 +7,7 @@ literals and arbitrary bytes, and queues per-document change notifications.
 It does not own files, windows, or threads; the application supplies memory,
 optionally supplies a lock, and decides when and where calls run.
 
-These documents describe C ABI **1.0.0** and Unicode data **15.1.0**. The
+These documents describe C ABI **1.1.0** and Unicode data **15.1.0**. The
 authoritative interface is [`include/cdin/kernel.h`](../include/cdin/kernel.h).
 Where this documentation and the header disagree, the header is correct; please
 report the mismatch.

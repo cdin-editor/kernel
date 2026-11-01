@@ -4,6 +4,22 @@
 CC      ?= cc
 AR      ?= ar
 RANLIB  ?= ranlib
+PKG_CONFIG ?= pkg-config
+
+# m-mdy-m/log.c is an independently built static dependency. Its source and
+# installation live outside src/; applications consume it transitively via
+# cdin-kernel.pc (Requires.private).
+DEPS_PREFIX ?= $(CURDIR)/.deps
+LOG_PKG_CONFIG_PATH := $(DEPS_PREFIX)/lib/pkgconfig$(if $(PKG_CONFIG_PATH),:$(PKG_CONFIG_PATH))
+LOG_PKG_CONFIG = PKG_CONFIG_PATH="$(LOG_PKG_CONFIG_PATH)" $(PKG_CONFIG)
+LOG_PKG_OK := $(shell $(LOG_PKG_CONFIG) --exists m-mdy-m-log 2>/dev/null && echo yes)
+ifneq ($(filter deps clean,$(MAKECMDGOALS)),)
+  # Bootstrap and cleanup must remain callable before the dependency exists.
+else ifneq ($(LOG_PKG_OK),yes)
+  $(error Missing m-mdy-m/log.c dependency. Run 'make deps' first (or set DEPS_PREFIX to its install prefix))
+endif
+LOG_CFLAGS := $(shell $(LOG_PKG_CONFIG) --cflags m-mdy-m-log 2>/dev/null)
+LOG_LIBS := $(shell $(LOG_PKG_CONFIG) --libs m-mdy-m-log 2>/dev/null)
 
 # `OS=Windows_NT` is set by native Windows environments, but MSYS2/UCRT64
 # intentionally runs a POSIX shell on Windows. Detect the host and shell
@@ -25,18 +41,21 @@ PACKAGE_VERSION ?= $(ABI_VERSION)
 
 WARN    = -Wall -Wextra -Wshadow -Wconversion -Wstrict-prototypes -Wformat=2 -Wpedantic -Werror
 CFLAGS  ?= -O2
-CFLAGS  += -std=c11 -Iinclude -Isrc $(WARN) -MMD -MP
+CFLAGS  += -std=c11 -Iinclude -Isrc $(LOG_CFLAGS) $(WARN) -MMD -MP
 LDFLAGS ?=
 LDLIBS  ?=
+LDLIBS  += $(LOG_LIBS)
 ifneq ($(WINDOWS_CMD_SHELL),1)
   LDLIBS += -pthread
 endif
 
 BUILD  = build
+LOG_SOURCE_DIR = $(BUILD)/deps/log.c-src
+LOG_BUILD_DIR  = $(BUILD)/deps/log.c-build
 OBJ    = $(BUILD)/obj
 LIB    = $(BUILD)/libcdin_kernel.a
 RUNNER = $(BUILD)/conformance-runner
-TESTS  = $(BUILD)/test_p1 $(BUILD)/test_p3_conc
+TESTS  = $(BUILD)/test_p1 $(BUILD)/test_p3_conc $(BUILD)/test_logging
 BENCH  = $(BUILD)/bench
 BENCH_SCALE = $(BUILD)/bench-scale
 FUZZ   = $(BUILD)/fuzz_ops
@@ -53,8 +72,8 @@ ifeq ($(WINDOWS_HOST),1)
   SHARED = $(BUILD)/cdin_kernel.dll
   FFI_SHARED = $(BUILD)/cdin_ffi.dll
   SHARED_LINK_FLAGS = -shared
-  SHARED_LINK_OPTIONS =
-  FFI_LINK_OPTIONS =
+  SHARED_LINK_OPTIONS = -Wl,--exclude-all-symbols
+  FFI_LINK_OPTIONS = -Wl,--exclude-all-symbols
   SHARED_EXTRA_LIBS = -Wl,--out-implib,$(BUILD)/libcdin_kernel.dll.a
   FFI_EXTRA_LIBS = -Wl,--out-implib,$(BUILD)/libcdin_ffi.dll.a
   SHARED_CFLAGS = -DCDIN_KERNEL_BUILD_DLL
@@ -64,8 +83,8 @@ else ifeq ($(HOST_OS),Darwin)
   SHARED = $(BUILD)/libcdin_kernel.dylib
   FFI_SHARED = $(BUILD)/libcdin_ffi.dylib
   SHARED_LINK_FLAGS = -dynamiclib
-  SHARED_LINK_OPTIONS = -Wl,-install_name,@rpath/libcdin_kernel.$(ABI_MAJOR).dylib
-  FFI_LINK_OPTIONS = -Wl,-install_name,@rpath/libcdin_ffi.dylib
+  SHARED_LINK_OPTIONS = -Wl,-install_name,@rpath/libcdin_kernel.$(ABI_MAJOR).dylib -Wl,-unexported_symbols_list,$(CURDIR)/packaging/m-mdy-m-log.unexported
+  FFI_LINK_OPTIONS = -Wl,-install_name,@rpath/libcdin_ffi.dylib -Wl,-unexported_symbols_list,$(CURDIR)/packaging/m-mdy-m-log.unexported
   SHARED_EXTRA_LIBS =
   FFI_EXTRA_LIBS =
   SHARED_CFLAGS = -fPIC -fvisibility=hidden
@@ -75,8 +94,8 @@ else
   SHARED = $(BUILD)/libcdin_kernel.so
   FFI_SHARED = $(BUILD)/libcdin_ffi.so
   SHARED_LINK_FLAGS = -shared
-  SHARED_LINK_OPTIONS = -Wl,-soname,libcdin_kernel.so.$(ABI_MAJOR)
-  FFI_LINK_OPTIONS = -Wl,-soname,libcdin_ffi.so.$(ABI_MAJOR)
+  SHARED_LINK_OPTIONS = -Wl,-soname,libcdin_kernel.so.$(ABI_MAJOR) -Wl,--exclude-libs,libm-mdy-m-log.a
+  FFI_LINK_OPTIONS = -Wl,-soname,libcdin_ffi.so.$(ABI_MAJOR) -Wl,--exclude-libs,libm-mdy-m-log.a
   SHARED_EXTRA_LIBS =
   FFI_EXTRA_LIBS =
   SHARED_CFLAGS = -fPIC -fvisibility=hidden
@@ -109,9 +128,12 @@ endif
 
 $(shell $(MKDIR))
 
-.PHONY: all shared ffi-shared quickstart check check-vectors check-tests vectors asan tsan fuzz-build bench bench-scale clean trace tests install uninstall
+.PHONY: all deps shared ffi-shared quickstart check check-vectors check-tests vectors asan tsan fuzz-build bench bench-scale clean trace tests install uninstall
 
 all: $(LIB)
+
+deps:
+	bash scripts/install-deps.sh --prefix "$(DEPS_PREFIX)"
 
 # Shared builds use separately compiled position-independent objects. `ffi-shared`
 # adds the optional examples/ffi bridge, not part of the stable public ABI.
@@ -166,7 +188,7 @@ $(OBJ)/runner_%.o: conformance/runner/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(RUNNER): $(R_OBJ) $(LIB)
-	$(CC) $(CFLAGS) $(LDFLAGS) $(R_OBJ) $(LIB) -o $@
+	$(CC) $(CFLAGS) $(LDFLAGS) $(R_OBJ) $(LIB) $(LDLIBS) -o $@
 
 # Conformance gate: every vector and every C regression test must pass.
 # `make check` stops at the first failing gate; run the two halves separately to
@@ -199,14 +221,20 @@ vectors: $(RUNNER)
 check-tests: $(TESTS)
 	$(BUILD)/test_p1
 	$(BUILD)/test_p3_conc
+	$(BUILD)/test_logging
 
 $(BUILD)/test_p1: tests/test_p1.c $(OBJ)/runner_alloc_strict.o $(LIB) include/cdin/kernel.h src/internal.h conformance/runner/alloc_strict.h
 	$(CC) $(CFLAGS) $(LDFLAGS) -Isrc -Iconformance/runner tests/test_p1.c \
-	    $(OBJ)/runner_alloc_strict.o $(LIB) -o $@
+	    $(OBJ)/runner_alloc_strict.o $(LIB) $(LDLIBS) -o $@
 
 $(BUILD)/test_p3_conc: tests/test_p3_conc.c $(OBJ)/runner_alloc_strict.o $(LIB) include/cdin/kernel.h conformance/runner/alloc_strict.h
 	$(CC) $(CFLAGS) $(LDFLAGS) -Isrc -Iconformance/runner tests/test_p3_conc.c \
 	    $(OBJ)/runner_alloc_strict.o $(LIB) $(LDLIBS) -o $@
+
+
+$(BUILD)/test_logging: tests/test_logging.c $(LIB) include/cdin/kernel.h src/internal.h
+	$(CC) $(CFLAGS) $(LDFLAGS) -Isrc tests/test_logging.c \
+	    $(LIB) $(LDLIBS) -o $@
 
 tests: check-tests
 
@@ -239,13 +267,13 @@ FUZZ_CFLAGS := -DSTANDALONE -Wno-unused-parameter
 endif
 build/fuzz_ops: fuzz/fuzz_ops.c support/strict_alloc.c $(LIB)
 	$(CC) $(CFLAGS) $(FUZZ_CFLAGS) $(LDFLAGS) fuzz/fuzz_ops.c support/strict_alloc.c \
-	    -Iinclude -I. $(LIB) -o $@
+	    -Iinclude -I. $(LIB) $(LDLIBS) -o $@
 
 build/fuzz_abi: tests/fuzz_abi.c $(LIB)
-	$(CC) $(CFLAGS) $(LDFLAGS) tests/fuzz_abi.c -Iinclude $(LIB) -o $@
+	$(CC) $(CFLAGS) $(LDFLAGS) tests/fuzz_abi.c -Iinclude $(LIB) $(LDLIBS) -o $@
 
 build/fuzz_classifiers: tests/fuzz_classifiers.c $(LIB)
-	$(CC) $(CFLAGS) $(LDFLAGS) tests/fuzz_classifiers.c -Iinclude $(LIB) -o $@
+	$(CC) $(CFLAGS) $(LDFLAGS) tests/fuzz_classifiers.c -Iinclude $(LIB) $(LDLIBS) -o $@
 
 build/fuzz_vector_parser: tests/fuzz_vector_parser.c conformance/runner/parser.c conformance/runner/parser.h
 	$(CC) $(CFLAGS) $(LDFLAGS) tests/fuzz_vector_parser.c conformance/runner/parser.c -Iinclude -Iconformance/runner -o $@
@@ -255,7 +283,7 @@ support/strict_alloc.o: support/strict_alloc.c
 
 $(BENCH): bench/bench.c $(LIB) support/strict_alloc.o
 	$(CC) $(CFLAGS) $(LDFLAGS) bench/bench.c support/strict_alloc.o -I. \
-	    $(LIB) -o $@
+	    $(LIB) $(LDLIBS) -o $@
 
 $(BENCH_SCALE): bench/bench_scale.c $(LIB)
 	$(CC) $(CFLAGS) $(LDFLAGS) bench/bench_scale.c -Iinclude $(LIB) $(LDLIBS) -o $@
@@ -276,6 +304,10 @@ trace: $(RUNNER)
 # Install the public header and both link-time/runtime forms of the core
 # library. DESTDIR is intended for package staging and CI smoke tests.
 install: all shared
+	DESTDIR= cmake --install "$(LOG_BUILD_DIR)" --config Release --prefix "$(DESTDIR)$(PREFIX)"
+	install -d "$(DESTDIR)$(PREFIX)/share/licenses/m-mdy-m-log"
+	install -m 0644 "$(LOG_SOURCE_DIR)/LICENSE" "$(DESTDIR)$(PREFIX)/share/licenses/m-mdy-m-log/LICENSE"
+	install -m 0644 "$(LOG_SOURCE_DIR)/NOTICE" "$(DESTDIR)$(PREFIX)/share/licenses/m-mdy-m-log/NOTICE"
 	install -d "$(DESTDIR)$(includedir)/cdin" "$(DESTDIR)$(libdir)" "$(DESTDIR)$(bindir)" "$(DESTDIR)$(pkgconfigdir)"
 	install -m 0644 include/cdin/kernel.h "$(DESTDIR)$(includedir)/cdin/kernel.h"
 	install -m 0644 $(LIB) "$(DESTDIR)$(libdir)/libcdin_kernel.a"
@@ -295,6 +327,8 @@ endif
 
 uninstall:
 	rm -f "$(DESTDIR)$(includedir)/cdin/kernel.h" "$(DESTDIR)$(libdir)/libcdin_kernel.a" "$(DESTDIR)$(pkgconfigdir)/cdin-kernel.pc"
+	rm -f "$(DESTDIR)$(includedir)/m-mdy-m/log.h" "$(DESTDIR)$(libdir)/libm-mdy-m-log.a" "$(DESTDIR)$(libdir)/pkgconfig/m-mdy-m-log.pc"
+	rm -rf "$(DESTDIR)$(libdir)/cmake/m-mdy-m-log" "$(DESTDIR)$(PREFIX)/share/licenses/m-mdy-m-log"
 ifeq ($(WINDOWS_HOST),1)
 	rm -f "$(DESTDIR)$(libdir)/libcdin_kernel.dll.a" "$(DESTDIR)$(bindir)/cdin_kernel.dll"
 else ifeq ($(HOST_OS),Darwin)

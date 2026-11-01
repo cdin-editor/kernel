@@ -31,6 +31,7 @@ mkdir -p "$package_root/share/cdin-kernel"
 cp -R "$stage/include" "$package_root/"
 cp -R "$stage/lib" "$package_root/"
 if [[ -d "$stage/bin" ]]; then cp -R "$stage/bin" "$package_root/"; fi
+if [[ -d "$stage/share" ]]; then cp -R "$stage/share" "$package_root/"; fi
 cp "$repo_root/README.md" "$repo_root/CHANGELOG.md" "$repo_root/LICENSE" "$package_root/"
 cp "$repo_root/packaging/release-install.sh" "$package_root/install.sh"
 cp "$repo_root/packaging/release-install.ps1" "$package_root/install.ps1"

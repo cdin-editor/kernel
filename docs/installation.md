@@ -4,10 +4,17 @@ This document explains how to build `cdin-kernel` from source, install it,
 link applications against the static or shared library, and how the release
 packages are produced and consumed.
 
-The library runtime has **no external dependencies**. The build needs only a
-C11 toolchain, GNU `make`, and the archiver tools; `awk`, `sed`, and an
-install binary are required only by specific targets (packaging, install,
-sanitizer runs need a POSIX shell).
+The kernel uses **m-mdy-m/log.c** as a separately installed C11 logging
+library. Its source is pinned in `deps.lock`, cloned into `build/deps/`, and
+installed into the project-local `.deps/` prefix by `make deps`. It is never
+copied into `src/` or compiled as part of the kernel source list. The logger
+is built static with position-independent code, so the kernel shared library
+does not require a separate logger DLL/SO at runtime. Static consumers receive
+the logger as a private transitive dependency through `cdin-kernel.pc`.
+
+The build needs a C11 toolchain, GNU `make`, Git, CMake 3.16+, `pkg-config`,
+and archiver tools. `awk`, `sed`, and an install binary are required by some
+packaging targets; sanitizer runs need a POSIX shell.
 
 ## 1. Supported platforms
 
@@ -17,15 +24,17 @@ sanitizer runs need a POSIX shell).
 | macOS x86-64 / arm64 | Apple clang | Shared library uses `@rpath`; see 5. |
 | Windows x86-64 | MinGW-w64 (GCC) under MSYS2 UCRT64 | Produces `cdin_kernel.dll` + import lib. MSVC is not supported. |
 
-The header and static library are portable C11 with no platform-specific
-calls; any conforming compiler on any POSIX or Win32 target can consume them.
+The public kernel header and static library are portable C11. The external
+logger is built for the host toolchain as a static archive; use the same
+compiler/ABI for the kernel and dependency.
 
 ## 2. Build from source
 
 ### 2.1 Linux and macOS
 
 ```sh
-sudo apt-get install build-essential pkg-config   # Debian/Ubuntu example
+sudo apt-get install build-essential cmake git pkg-config   # Debian/Ubuntu example
+make deps                                           # install pinned logger locally
 make all shared quickstart                        # build everything
 make check                                        # run all gates
 sudo make install                                 # default PREFIX=/usr/local
@@ -34,7 +43,8 @@ sudo make install                                 # default PREFIX=/usr/local
 ### 2.2 Windows (MSYS2 UCRT64)
 
 ```sh
-pacman -S --needed make mingw-w64-ucrt-x86_64-gcc
+pacman -S --needed make git mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-pkgconf
+make deps
 make all shared quickstart
 make check
 make install PREFIX=/ucrt64/local        # or any MSYS path
@@ -59,14 +69,15 @@ link step. `make clean && make` recovers.
 
 | Target | Produces | Description |
 |---|---|---|
-| `all` | `build/libcdin_kernel.a` | Static library only. |
+| `deps` | `.deps/` | Clone, build, and install the pinned `m-mdy-m/log.c` static library. |
+| `all` | `build/libcdin_kernel.a` | Static library only (requires `make deps`). |
 | `shared` | `build/cdin_kernel.dll` (+ `.dll.a`) / `libcdin_kernel.so(.MAJOR)` / `.dylib` | Shared library with symbol visibility. |
 | `ffi-shared` | `build/cdin_ffi.dll` `libcdin_ffi.so` | Optional demo bridge used by the language-binding examples. |
 | `quickstart` | runs `build/quickstart` | Builds and executes the C example. |
 | `check` | - | `check-vectors` + `check-tests`; the full quality gate. |
 | `check-vectors` | - | Run every conformance vector, one process per file; stop on first failure. |
 | `vectors` | - | Run every vector and report all failures (no early exit). |
-| `check-tests` | - | Run `test_p1` and `test_p3_conc`. |
+| `check-tests` | - | Run `test_p1`, `test_p3_conc`, and the logger integration regression test. |
 | `tests` | - | Alias of `check-tests`. |
 | `asan` | - | Clean rebuild with ASan+UBSan, then the full vector+test set. |
 | `tsan` | - | The same with the thread sanitizer. |
@@ -78,7 +89,8 @@ link step. `make clean && make` recovers.
 | `clean` | - | Remove intermediate objects and outputs. |
 
 Build variables: `CC`, `AR`, `RANLIB` (toolchain), `CFLAGS`, `LDFLAGS`,
-`LDLIBS` (override defaults), `PREFIX`, `DESTDIR` (installation layout),
+`LDLIBS` (additional link flags), `DEPS_PREFIX` (logger install prefix; defaults
+to `.deps/`), `PREFIX`, `DESTDIR` (installation layout),
 `SIZE_MIB` (bench-scale input), `STANDALONE=1` (fuzz driver without
 libFuzzer).
 
@@ -91,7 +103,7 @@ libFuzzer).
 | `build/libcdin_kernel.so.$(ABI_MAJOR)` (+ unversioned link) | Linux shared library with stable soname |
 | `build/libcdin_kernel.dylib` (+ `.MAJOR` link) | macOS shared library |
 | `build/conformance-runner` | vector runner (not installed) |
-| `build/test_p1`, `build/test_p3_conc` | regression tests (not installed) |
+| `build/test_p1`, `build/test_p3_conc`, `build/test_logging` | regression tests (not installed) |
 | `build/bench`, `build/bench-scale`, `build/fuzz_ops` | performance and fuzz helpers (not installed) |
 
 The `.pc` file generated by `make install` contains the ABI version so that
@@ -109,7 +121,9 @@ make install [PREFIX=/your/prefix] [DESTDIR=/staging]
 | `$(PREFIX)/lib/libcdin_kernel.a` | static library |
 | `$(PREFIX)/lib/libcdin_kernel.so.$(M)` `.$(MAJOR)` `libcdin_kernel.so` | Linux shared chain (three names) |
 | `$(PREFIX)/bin/cdin_kernel.dll`, `lib` import lib | Windows layout |
-| `$(PREFIX)/lib/pkgconfig/cdin-kernel.pc` | `pkg-config` metadata |
+| `$(PREFIX)/lib/pkgconfig/cdin-kernel.pc` | `pkg-config` metadata with `Requires.private: m-mdy-m-log` |
+| `$(PREFIX)/include/m-mdy-m/log.h`, `lib/libm-mdy-m-log.a` | separately installed logger dependency |
+| `$(PREFIX)/share/licenses/m-mdy-m-log/` | dependency license and upstream notice |
 
 `DESTDIR` supports staging (`DESTDIR=/tmp/stage make install`); paths written
 into `cdin-kernel.pc` still use `PREFIX`, which is standard for package
@@ -120,23 +134,27 @@ builders.
 ### 5.1 Static
 
 ```sh
-cc app.c $(pkg-config --cflags --libs cdin-kernel) -o app
+cc app.c $(pkg-config --cflags cdin-kernel) \
+  "$(pkg-config --variable=libdir cdin-kernel)/libcdin_kernel.a" \
+  $(pkg-config --libs --static m-mdy-m-log) -o app
 ```
 
-Manual flags, no pkg-config:
+Manual flags, no pkg-config (link the logger archive after the kernel archive):
 
 ```sh
-cc -std=c11 -I/usr/local/include app.c /usr/local/lib/libcdin_kernel.a -o app
+cc -std=c11 -I/usr/local/include app.c \
+   /usr/local/lib/libcdin_kernel.a /usr/local/lib/libm-mdy-m-log.a -o app
 ```
 
 Windows (MinGW):
 
 ```sh
 cc -std=c11 -I"C:/msys64/ucrt64/local/include" app.c \
-   "C:/msys64/ucrt64/local/lib/libcdin_kernel.a" -o app.exe
+   "C:/msys64/ucrt64/local/lib/libcdin_kernel.a" \
+   "C:/msys64/ucrt64/local/lib/libm-mdy-m-log.a" -o app.exe
 ```
 
-Additional link flags are not required; the library is self-contained.
+For static linking, use the `libcdin_kernel.a` archive path explicitly and link `m-mdy-m-log` after it. `Requires.private` makes `pkg-config --libs --static cdin-kernel` expose that logger dependency, but `--static` does not force the linker to choose the kernel `.a` instead of an installed shared library.
 
 ### 5.2 Shared
 
@@ -177,15 +195,18 @@ unpacking and running the installer.
 
 ## 7. Container builds
 
-The project publishes a container image containing the header, static and
-shared libraries, GCC, Make, and pkg-config, so an editor project can compile
+The project publishes a container image containing the kernel and logger
+headers/static libraries, the kernel shared library, GCC, Make, CMake, Git,
+and pkg-config, so an editor project can compile
 against the kernel without installing a toolchain locally. Mount your project
 and compile inside it:
 
 ```sh
 docker run --rm -v "$PWD:/workspace" -w /workspace \
     <registry>/<cdin-sdk-image> \
-    cc app.c $(pkg-config --cflags --libs cdin-kernel) -o app
+    cc app.c $(pkg-config --cflags cdin-kernel) \
+  "$(pkg-config --variable=libdir cdin-kernel)/libcdin_kernel.a" \
+  $(pkg-config --libs --static m-mdy-m-log) -o app
 ```
 
 Consult the project README for the current image name; the image is built
@@ -215,10 +236,11 @@ A green run prints `version=1 length=11` and the edited document text; if
 
 ## 10. NOT RUN
 
-This documentation was verified by running `make check` (18 vector files,
-105 vectors, all pass; P1 12 checks, P3 10 checks), `make quickstart`
-(expected output), and `make bench` on a Windows/MinGW host. The following
-were *not* exercised while writing this document and are documented from the
-Makefile and packaging scripts, not from an observed run: a clean
-`make install` into a fresh prefix, release-packaging script execution,
-container image builds, libFuzzer (`fuzz-build`), and macOS-specific linking.
+The kernel build and its full conformance/regression suite were exercised in
+this integration environment against a local test double implementing the
+pinned logger's public API. This verifies CDIN's compile/link integration and
+callback mapping, but it does **not** replace a build against the actual
+upstream logger. The following were not exercised here: fetching/building the
+pinned upstream commit from GitHub (network access was unavailable), a clean
+`make install` and release package using the real dependency, container image
+builds, libFuzzer (`fuzz-build`), and macOS/Windows linking.

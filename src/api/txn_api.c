@@ -11,6 +11,7 @@ cdin_status cdin_txn_begin(cdin_kernel *k, cdin_doc d, const cdin_txn_begin_requ
     st = doc_lookup_mut(k, d, &dd);
     if (st == CDIN_OK) st = txn_begin_locked(k, dd, req, out);
     k_unlock(k);
+    if (st == CDIN_OK) K_LOG_DEBUG(k, "transaction started");
     return st;
 }
 
@@ -42,6 +43,7 @@ cdin_status cdin_txn_commit(cdin_kernel *k, cdin_txn t, const cdin_txn_commit_re
     if (st == CDIN_OK) st = txn_commit_locked(k, tx, d, req, out, &wl);
     k_unlock(k);
     wake_run(&wl);
+    if (st == CDIN_OK) K_LOG_DEBUG(k, "transaction committed");
     return st;
 }
 
@@ -55,6 +57,7 @@ cdin_status cdin_txn_abort(cdin_kernel *k, cdin_txn t)
     st = txn_resolve(k, t, &tx, &d);
     if (st == CDIN_OK) st = txn_abort_locked(k, tx, d);
     k_unlock(k);
+    if (st == CDIN_OK) K_LOG_DEBUG(k, "transaction aborted");
     return st;
 }
 
