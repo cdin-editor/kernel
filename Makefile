@@ -6,22 +6,30 @@ AR      ?= ar
 RANLIB  ?= ranlib
 PKG_CONFIG ?= pkg-config
 
-# pkgconf uses ';' for path lists on Windows and ':' on POSIX hosts.
-# MSYS2/UCRT64 is a Windows host even though Make runs in a POSIX shell.
+# pkgconf is a native Windows executable in MSYS2/UCRT64. Convert the
+# MSYS-style working path to a Windows path before passing it through
+# PKG_CONFIG_PATH; pkgconf uses Windows path-list semantics on this host.
 HOST_OS := $(shell uname -s 2>/dev/null)
-PKG_CONFIG_PATH_SEPARATOR := $(if $(filter Windows_NT,$(OS)),;,$(if $(filter MINGW% MSYS% CYGWIN%,$(HOST_OS)),;,:))
 
 # m-mdy-m/log.c is an independently built static dependency. Its source and
 # installation live outside src/; applications consume it transitively via
 # cdin-kernel.pc (Requires.private).
 DEPS_PREFIX ?= $(CURDIR)/.deps
-LOG_PKG_CONFIG_PATH := $(DEPS_PREFIX)/lib/pkgconfig$(if $(PKG_CONFIG_PATH),$(PKG_CONFIG_PATH_SEPARATOR)$(PKG_CONFIG_PATH))
+
+ifneq ($(filter MINGW% MSYS% CYGWIN%,$(HOST_OS)),)
+  LOG_PKG_CONFIG_PATH := $(shell cygpath -m "$(abspath $(DEPS_PREFIX)/lib/pkgconfig)")
+else
+  LOG_PKG_CONFIG_PATH := $(abspath $(DEPS_PREFIX)/lib/pkgconfig)
+endif
+
+# Keep this lookup isolated from inherited host paths (for example, Python's
+# PKG_CONFIG_PATH). The kernel's logger dependency is installed in this prefix.
 LOG_PKG_CONFIG = PKG_CONFIG_PATH="$(LOG_PKG_CONFIG_PATH)" $(PKG_CONFIG)
 LOG_PKG_OK := $(shell $(LOG_PKG_CONFIG) --exists m-mdy-m-log 2>/dev/null && echo yes)
 ifneq ($(filter deps clean,$(MAKECMDGOALS)),)
   # Bootstrap and cleanup must remain callable before the dependency exists.
 else ifneq ($(LOG_PKG_OK),yes)
-  $(error Missing m-mdy-m/log.c dependency. Run 'make deps' first (or set DEPS_PREFIX to its install prefix))
+  $(error Missing m-mdy-m/log.c dependency. Expected $(LOG_PKG_CONFIG_PATH)/m-mdy-m-log.pc; run 'make deps' first or set DEPS_PREFIX)
 endif
 LOG_CFLAGS := $(shell $(LOG_PKG_CONFIG) --cflags m-mdy-m-log 2>/dev/null)
 LOG_LIBS := $(shell $(LOG_PKG_CONFIG) --libs m-mdy-m-log 2>/dev/null)

@@ -56,4 +56,28 @@ cmake --install "$build_dir" --config Release
 
 printf '\nInstalled m-mdy-m/log.c %s (%s) into %s\n' \
   "$M_MDY_M_LOG_VERSION" "$M_MDY_M_LOG_COMMIT" "$prefix"
-printf 'pkg-config: PKG_CONFIG_PATH="%s/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" pkg-config --modversion m-mdy-m-log\n' "$prefix"
+
+pc_file="$prefix/lib/pkgconfig/m-mdy-m-log.pc"
+if [[ ! -f "$pc_file" ]]; then
+  printf 'error: expected pkg-config file was not installed: %s\n' "$pc_file" >&2
+  exit 1
+fi
+
+pkgconfig_dir="$(cd "$(dirname "$pc_file")" && pwd -P)"
+if command -v cygpath >/dev/null 2>&1; then
+  # MSYS2's pkgconf is a native Windows program and needs a Windows path.
+  pkgconfig_dir="$(cygpath -m "$pkgconfig_dir")"
+fi
+
+if ! installed_version="$(PKG_CONFIG_PATH="$pkgconfig_dir" pkg-config --modversion m-mdy-m-log 2>&1)"; then
+  printf 'error: pkg-config cannot resolve m-mdy-m-log from %s\n%s\n' \
+    "$pkgconfig_dir" "$installed_version" >&2
+  exit 1
+fi
+if [[ "$installed_version" != "$M_MDY_M_LOG_VERSION" ]]; then
+  printf 'error: installed m-mdy-m-log version mismatch: expected %s, found %s\n' \
+    "$M_MDY_M_LOG_VERSION" "$installed_version" >&2
+  exit 1
+fi
+printf 'Verified pkg-config module m-mdy-m-log %s from %s\n' \
+  "$installed_version" "$pkgconfig_dir"
