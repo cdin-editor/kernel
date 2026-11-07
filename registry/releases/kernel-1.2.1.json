@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0.0",
+  "component_id": "kernel",
+  "variant": "default",
+  "version": "1.2.1",
+  "status": "active",
+  "source_units": [
+    {
+      "source_unit_id": "kernel-source",
+      "repository_uri": "https://github.com/cdin-editor/kernel",
+      "revision": "f4875b6eb59bd76878e7ff486b6114abd9bb1329"
+    }
+  ],
+  "dependencies": [],
+  "contracts": {
+    "provides": [
+      {
+        "contract_id": "org.cdin.kernel-abi",
+        "version": "1.1.0"
+      }
+    ],
+    "requires": []
+  }
+}
