@@ -5,6 +5,16 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Publish immutable Registry Component Release Metadata for the Kernel 1.2.1 default package identity, allowing Registry consumers to resolve Kernel through the independent Catalog without changing the public C ABI.
+
+### Changed
+
+- Align the Registry integration record with the distinction between the Kernel package release version and its separately versioned public ABI.
+
 ## [1.2.1] - 2026-11-01
 
 ### Fixed
