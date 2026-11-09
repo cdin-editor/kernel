@@ -9,7 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Add a Pipeline OCI/GHCR integration workflow that builds the normal kernel release archive, re-tests its installable contents, and retains digest-pinned publication evidence.
 - Publish immutable Registry Component Release Metadata for the Kernel 1.2.1 default package identity, allowing Registry consumers to resolve Kernel through the independent Catalog without changing the public C ABI.
 
 ### Changed
