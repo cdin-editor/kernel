@@ -25,9 +25,9 @@ jobs:
     permissions:
       contents: read
       packages: write
-    uses: m-mdy-m/pipeline/.github/workflows/oci-publish.yml@feat/oci-target-media-types
+    uses: m-mdy-m/pipeline/.github/workflows/oci-publish.yml@main
     with:
-      pipeline-ref: feat/oci-target-media-types
+      pipeline-ref: main
       package-name: cdin-kernel
       component-id: cdin-kernel
       variant: default
