@@ -6,10 +6,15 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "SemVer version used for a no-publish five-platform build/test"
+        description: "SemVer version used for a five-platform build/publish"
         required: true
         default: "0.0.0-dev.1"
         type: string
+      publish:
+        description: "Publish to GHCR (select an existing v-prefixed tag as the workflow ref)"
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -27,7 +32,7 @@ jobs:
       component-id: cdin-kernel
       variant: default
       version: ${{ inputs.version || '' }}
-      dry-run: ${{ github.event_name == 'workflow_dispatch' }}
+      dry-run: ${{ github.event_name == 'workflow_dispatch' && inputs.publish != true }}
       test-command: bash scripts/ci-check.sh
       build-command: |
         set -euo pipefail
