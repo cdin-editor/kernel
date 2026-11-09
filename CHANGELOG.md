@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Publish versioned `cdin-kernel` OCI package artifacts to GHCR for Linux x86_64/ARM64, macOS x86_64/ARM64, and Windows x86_64. Keep one platform-specific tag and immutable digest per target alongside the existing GitHub Release assets.
 - Publish immutable Registry Component Release Metadata for the Kernel 1.2.1 default package identity, allowing Registry consumers to resolve Kernel through the independent Catalog without changing the public C ABI.
 
 ### Changed
