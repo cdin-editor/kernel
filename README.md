@@ -88,7 +88,7 @@ The image includes the public headers, `cdin-kernel` and `m-mdy-m/log.c` static 
 - [C ABI reference](docs/abi.md)
 - [Language bindings](docs/language-bindings.md)
 - [Installation and build](docs/installation.md)
-- [OCI package publication](docs/oci-packages.md)
+- [GitHub Release assets](docs/github-releases.md)
 - [Architecture](docs/architecture.md)
 - [Developer guide](docs/development.md)
 
