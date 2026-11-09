@@ -3,6 +3,13 @@ name: Publish multi-platform GHCR packages
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "SemVer version used for a no-publish five-platform build/test"
+        required: true
+        default: "0.0.0-dev.1"
+        type: string
 
 permissions:
   contents: read
@@ -19,10 +26,17 @@ jobs:
       package-name: cdin-kernel
       component-id: cdin-kernel
       variant: default
+      version: ${{ inputs.version || '' }}
+      dry-run: ${{ github.event_name == 'workflow_dispatch' }}
       test-command: bash scripts/ci-check.sh
       build-command: |
         set -euo pipefail
-        PIPELINE_RELEASE_TAG="$GITHUB_REF_NAME" bash scripts/ci-package.sh
+        if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+          release_tag="$GITHUB_REF_NAME"
+        else
+          release_tag="v${{ inputs.version }}"
+        fi
+        PIPELINE_RELEASE_TAG="$release_tag" bash scripts/ci-package.sh
       artifact-path: dist/cdin-kernel-*.tar.gz
       artifact-media-type: application/vnd.pipeline.package.layer.v1.tar+gzip
       build-matrix-json: >-
