@@ -28,6 +28,15 @@ jobs:
       artifact-path: dist/cdin-kernel-*.tar.gz
       artifact-test-command: |
         set -euo pipefail
+        package_version="$(python - "$PIPELINE_PACKAGE_METADATA" <<'PY'
+        import json
+        import sys
+        from pathlib import Path
+
+        metadata = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+        print(metadata["package"]["version"])
+        PY
+        )"
         listing="$(tar -tzf "$PIPELINE_ARTIFACT_PATH")"
         package_root="${listing%%/*}"
         [[ -n "$package_root" && "$package_root" != "$listing" ]] || {
@@ -53,7 +62,7 @@ jobs:
           }
         done
         tar -xOzf "$PIPELINE_ARTIFACT_PATH" "$package_root/BUILD-INFO.txt" \
-          | grep -Fxq "Package version: $PIPELINE_PACKAGE_VERSION"
+          | grep -Fxq "Package version: $package_version"
         tar -xOzf "$PIPELINE_ARTIFACT_PATH" "$package_root/BUILD-INFO.txt" \
           | grep -Fxq "Platform: linux"
         tar -xOzf "$PIPELINE_ARTIFACT_PATH" "$package_root/BUILD-INFO.txt" \
