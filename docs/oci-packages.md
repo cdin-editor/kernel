@@ -12,7 +12,10 @@ These are package archives, not runnable container images. Use ORAS to download 
 Pushing a version tag such as `v1.2.1` runs
 [`.github/workflows/oci-release.yml`](../.github/workflows/oci-release.yml).
 The workflow reuses the release build/package scripts and publishes all five targets
-to the same package repository:
+to the same package repository. It can also be started manually from the Actions tab:
+manual dispatch always forces a no-publish dry run, builds all five native packages,
+and verifies their metadata and bytes without writing to GHCR. Use a release tag to
+perform a real publication.
 
 ```text
 ghcr.io/cdin-editor/cdin-kernel:1.2.1-linux-x86_64
