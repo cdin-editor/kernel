@@ -3,6 +3,7 @@ name: Build and publish release
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -10,6 +11,10 @@ permissions:
 jobs:
   release:
     name: Build, test and publish platform packages
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
     uses: m-mdy-m/pipeline/.github/workflows/release.yml@main
     with:
       pipeline-ref: main
