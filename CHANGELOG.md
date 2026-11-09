@@ -4,7 +4,7 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-## [Unreleased]
+
 ## [1.2.2] - 2026-11-09
 
 ### Added
@@ -21,7 +21,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Keep GitHub Release assets and GHCR packages as parallel distribution channels for the same tagged kernel version. Existing platform archive names, individual SHA-256 sidecars, and the aggregate `SHA256SUMS` release asset remain available.
 - Use tar+gzip OCI layers for Linux and macOS packages and the ZIP media type for the Windows package, matching each platform's actual release archive.
 - Align the Registry integration record with the distinction between the Kernel package release version and its separately versioned public ABI.
-
 
 ## [1.2.1] - 2026-11-01
 
