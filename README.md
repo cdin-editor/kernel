@@ -89,6 +89,7 @@ The image includes the public headers, `cdin-kernel` and `m-mdy-m/log.c` static 
 - [Language bindings](docs/language-bindings.md)
 - [Installation and build](docs/installation.md)
 - [GitHub Release assets](docs/github-releases.md)
+- [GHCR packages](docs/oci-packages.md)
 - [Architecture](docs/architecture.md)
 - [Developer guide](docs/development.md)
 
