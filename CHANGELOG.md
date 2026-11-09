@@ -5,16 +5,23 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.2.2] - 2026-11-09
 
 ### Added
 
-- Publish versioned `cdin-kernel` OCI package artifacts to GHCR for Linux x86_64/ARM64, macOS x86_64/ARM64, and Windows x86_64. Keep one platform-specific tag and immutable digest per target alongside the existing GitHub Release assets.
+- Add tag-triggered multi-platform OCI package publication to GitHub Container Registry alongside the existing GitHub Release assets.
+- Publish the native kernel package for Linux x86_64, Linux ARM64, macOS x86_64, macOS ARM64, and Windows x86_64 (MinGW-w64 UCRT64) under the single `ghcr.io/cdin-editor/cdin-kernel` package, using a versioned platform-specific tag for each target.
+- Record component, package version, source revision, target OS, architecture, ABI, archive media type, size, and SHA-256 in each OCI package descriptor; retain an immutable manifest digest and publication receipt for every platform.
+- Verify each published artifact by pulling it back from GHCR using its immutable digest and checking the downloaded package bytes; retain per-platform publication evidence as GitHub Actions artifacts.
+- Add a manual GHCR workflow dry-run that builds and verifies all five platform packages without publishing them to the registry.
 - Publish immutable Registry Component Release Metadata for the Kernel 1.2.1 default package identity, allowing Registry consumers to resolve Kernel through the independent Catalog without changing the public C ABI.
 
 ### Changed
 
+- Keep GitHub Release assets and GHCR packages as parallel distribution channels for the same tagged kernel version. Existing platform archive names, individual SHA-256 sidecars, and the aggregate `SHA256SUMS` release asset remain available.
+- Use tar+gzip OCI layers for Linux and macOS packages and the ZIP media type for the Windows package, matching each platform's actual release archive.
 - Align the Registry integration record with the distinction between the Kernel package release version and its separately versioned public ABI.
+
 
 ## [1.2.1] - 2026-11-01
 
