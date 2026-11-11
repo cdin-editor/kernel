@@ -5,6 +5,7 @@ set -euo pipefail
 : "${STAGED_PREFIX:?set STAGED_PREFIX to the DESTDIR/PREFIX installation directory}"
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+cd "$repo_root"
 stage="$(cd "$STAGED_PREFIX" && pwd -P)"
 host="$(uname -s 2>/dev/null || printf unknown)"
 arch="$(uname -m 2>/dev/null || printf unknown)"
