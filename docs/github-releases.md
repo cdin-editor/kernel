@@ -37,7 +37,10 @@ source tag/commit identity, package version, C ABI version, archive structure, t
 ABI recorded in each package, and the archive's actual SHA-256/byte count.
 
 It then produces `kernel-VERSION.json` with Registry Component Release Metadata
-schema 1.2.0. The document records the exact full source commit, the provided
+schema 1.2.0. The generated file is placed under `release-build-metadata/` so Pipeline's
+release assembler treats it as a release-build output, flattens it alongside the
+five packages, and includes it in the final `SHA256SUMS`. The document records the
+exact full source commit, the provided
 `org.cdin.kernel-abi` contract, and five target-specific `native-development-package`
 artifacts using the `cmake-prefix-v1` layout. GitHub's Release Assets API supplies
 the generated metadata asset's own digest and size; the JSON does not attempt to hash
