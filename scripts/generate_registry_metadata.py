@@ -340,6 +340,24 @@ def build_metadata(
                     f"{filename}: BUILD-INFO {key!r} is {build_info[key]!r}, expected {expected!r}"
                 )
 
+        platform_files = {
+            "windows": ("lib/libcdin_kernel.dll.a", "bin/cdin_kernel.dll"),
+            "darwin": (f"lib/libcdin_kernel.{kernel_abi}.dylib",),
+            "linux": (f"lib/libcdin_kernel.so.{kernel_abi}",),
+        }[target["os"]]
+        if target["extension"] == ".zip":
+            with zipfile.ZipFile(archive_path) as package:
+                member_names = {item.filename.rstrip("/") for item in package.infolist()}
+        else:
+            with tarfile.open(archive_path, mode="r:gz") as package:
+                member_names = {item.name.rstrip("/") for item in package.getmembers()}
+        missing_platform_files = sorted(set(platform_files) - member_names)
+        if missing_platform_files:
+            raise MetadataError(
+                f"{filename}: cmake-prefix-v1 package is missing target libraries: "
+                + ", ".join(missing_platform_files)
+            )
+
         artifact_id = (
             f"kernel-{target['os']}-{target['architecture'].replace('_', '-')}-{target['abi']}"
         )
