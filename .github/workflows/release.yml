@@ -32,7 +32,7 @@ jobs:
         --tag "$PIPELINE_RELEASE_TAG"
         --source-revision "$PIPELINE_SOURCE_SHA"
         --artifact-dir "$RELEASE_ASSETS_DIRECTORY"
-        --output "$RELEASE_ASSETS_DIRECTORY/kernel-$PIPELINE_RELEASE_VERSION.json"
+        --output "$RELEASE_ASSETS_DIRECTORY/release-build-metadata/kernel-$PIPELINE_RELEASE_VERSION.json"
       build-matrix-json: >-
         {"include":[
           {"id":"linux-x86_64","os":"ubuntu-24.04"},
