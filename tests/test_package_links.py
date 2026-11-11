@@ -66,6 +66,7 @@ class RegistryPrefixArchiveTests(unittest.TestCase):
         self.assertIn("lib/libm-mdy-m-log.a", names)
         self.assertNotIn("prefix/lib/libcdin_kernel.a", names)
 
+    @unittest.skipIf(os.name == "nt", "POSIX symlink creation may require elevated Windows privileges")
     def test_rejects_symlinks_in_registry_prefix(self) -> None:
         alias = self.prefix / "lib" / "escape"
         alias.symlink_to("../include/cdin/kernel.h")
