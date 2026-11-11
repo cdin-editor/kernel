@@ -1,14 +1,80 @@
 from __future__ import annotations
 
+import hashlib
+import io
 import os
 from pathlib import Path
+import tarfile
 import subprocess
 import sys
 import tempfile
 import unittest
+import zipfile
+
+from scripts.package_registry_prefix import PackageError, write_prefix_archive
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "normalize-package-links.py"
+
+
+
+class RegistryPrefixArchiveTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.prefix = Path(self.temporary.name) / "prefix"
+        self.prefix.mkdir()
+        files = {
+            "BUILD-INFO.txt": b"Package version: 1.2.3\\n",
+            "include/cdin/kernel.h": b"kernel header",
+            "include/m-mdy-m/log.h": b"logger header",
+            "lib/libcdin_kernel.a": b"kernel library",
+            "lib/libm-mdy-m-log.a": b"logger library",
+            "lib/pkgconfig/cdin-kernel.pc": b"kernel pkgconfig",
+            "lib/pkgconfig/m-mdy-m-log.pc": b"logger pkgconfig",
+        }
+        for relative, content in files.items():
+            path = self.prefix / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(content)
+
+    def tearDown(self) -> None:
+        self.temporary.cleanup()
+
+    def test_tar_gz_starts_at_install_prefix_and_has_real_checksum(self) -> None:
+        output = Path(self.temporary.name) / "kernel-cmake-prefix.tar.gz"
+        digest, size = write_prefix_archive(self.prefix, output, "tar.gz")
+        with tarfile.open(output, "r:gz") as archive:
+            names = {member.name.rstrip("/") for member in archive.getmembers()}
+        self.assertIn("BUILD-INFO.txt", names)
+        self.assertIn("include/cdin/kernel.h", names)
+        self.assertIn("lib/libcdin_kernel.a", names)
+        self.assertNotIn("prefix/include/cdin/kernel.h", names)
+        self.assertEqual(size, output.stat().st_size)
+        self.assertEqual(digest, hashlib.sha256(output.read_bytes()).hexdigest())
+        self.assertEqual(
+            (Path(str(output) + ".sha256")).read_text(encoding="ascii"),
+            f"{digest}  {output.name}\\n",
+        )
+
+    def test_zip_starts_at_install_prefix(self) -> None:
+        output = Path(self.temporary.name) / "kernel-cmake-prefix.zip"
+        write_prefix_archive(self.prefix, output, "zip")
+        with zipfile.ZipFile(output) as archive:
+            names = {item.filename.rstrip("/") for item in archive.infolist()}
+        self.assertIn("BUILD-INFO.txt", names)
+        self.assertIn("include/cdin/kernel.h", names)
+        self.assertIn("lib/libm-mdy-m-log.a", names)
+        self.assertNotIn("prefix/lib/libcdin_kernel.a", names)
+
+    def test_rejects_symlinks_in_registry_prefix(self) -> None:
+        alias = self.prefix / "lib" / "escape"
+        alias.symlink_to("../include/cdin/kernel.h")
+        with self.assertRaisesRegex(PackageError, "cannot contain symlinks"):
+            write_prefix_archive(
+                self.prefix,
+                Path(self.temporary.name) / "unsafe.tar.gz",
+                "tar.gz",
+            )
 
 
 @unittest.skipIf(os.name == "nt", "POSIX symlink creation may require elevated Windows privileges")
