@@ -43,9 +43,14 @@ def _safe_relative(path: Path, root: Path) -> str:
 
 
 def _entries(root: Path) -> list[tuple[Path, str]]:
-    root = root.resolve(strict=True)
-    if not root.is_dir() or root.is_symlink():
+    root = root.expanduser().absolute()
+    try:
+        root_info = root.lstat()
+    except OSError as error:
+        raise PackageError(f"cannot inspect package prefix: {root}") from error
+    if stat.S_ISLNK(root_info.st_mode) or not stat.S_ISDIR(root_info.st_mode):
         raise PackageError(f"package prefix is not a real directory: {root}")
+    root = root.resolve(strict=True)
     required = (
         "BUILD-INFO.txt",
         "include/cdin/kernel.h",
