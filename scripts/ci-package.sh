@@ -12,7 +12,7 @@ make PACKAGE_VERSION="$package_version" DESTDIR="$stage" PREFIX=/cdin install
 EXPECTED_PACKAGE_VERSION="$package_version" CC="${CC:-cc}" bash scripts/verify-installed.sh "$stage/cdin"
 PACKAGE_VERSION="$package_version" STAGED_PREFIX="$stage/cdin" bash scripts/package-release.sh
 PACKAGE_VERSION="$package_version" bash scripts/verify-release-output.sh dist
-archive="$(find dist -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.zip' \) -print -quit)"
+archive="$(find dist -maxdepth 1 -type f \( -name 'cdin-kernel-*.tar.gz' -o -name 'cdin-kernel-*.zip' \) ! -name '*-cmake-prefix.*' -print -quit)"
 test -n "$archive"
 CC="${CC:-cc}" bash scripts/test-release-package.sh "$archive" "$package_version"
 registry_archive="$(find dist -maxdepth 1 -type f -name '*-cmake-prefix.*' ! -name '*.sha256' -print -quit)"
