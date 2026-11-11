@@ -67,6 +67,17 @@ class RegistryPrefixArchiveTests(unittest.TestCase):
         self.assertNotIn("prefix/lib/libcdin_kernel.a", names)
 
     @unittest.skipIf(os.name == "nt", "POSIX symlink creation may require elevated Windows privileges")
+    def test_rejects_symlink_as_package_root(self) -> None:
+        link = Path(self.temporary.name) / "prefix-link"
+        link.symlink_to(self.prefix, target_is_directory=True)
+        with self.assertRaisesRegex(PackageError, "package prefix is not a real directory"):
+            write_prefix_archive(
+                link,
+                Path(self.temporary.name) / "linked-root.tar.gz",
+                "tar.gz",
+            )
+
+    @unittest.skipIf(os.name == "nt", "POSIX symlink creation may require elevated Windows privileges")
     def test_rejects_symlinks_in_registry_prefix(self) -> None:
         alias = self.prefix / "lib" / "escape"
         alias.symlink_to("../include/cdin/kernel.h")
