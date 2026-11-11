@@ -27,10 +27,6 @@ jobs:
         dist/cdin-kernel-*.zip.sha256
         dist/cdin-kernel-*.tar.gz
         dist/cdin-kernel-*.tar.gz.sha256
-        dist/cdin-kernel-*-cmake-prefix.zip
-        dist/cdin-kernel-*-cmake-prefix.zip.sha256
-        dist/cdin-kernel-*-cmake-prefix.tar.gz
-        dist/cdin-kernel-*-cmake-prefix.tar.gz.sha256
       asset-preparation-command: >-
         python scripts/generate_registry_metadata.py
         --tag "$PIPELINE_RELEASE_TAG"
