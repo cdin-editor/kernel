@@ -15,3 +15,6 @@ PACKAGE_VERSION="$package_version" bash scripts/verify-release-output.sh dist
 archive="$(find dist -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.zip' \) -print -quit)"
 test -n "$archive"
 CC="${CC:-cc}" bash scripts/test-release-package.sh "$archive" "$package_version"
+registry_archive="$(find dist -maxdepth 1 -type f -name '*-cmake-prefix.*' ! -name '*.sha256' -print -quit)"
+test -n "$registry_archive"
+CC="${CC:-cc}" bash scripts/test-registry-package.sh "$registry_archive" "$package_version"
