@@ -32,7 +32,12 @@ description = "Check the public header from C11 and C++17"
 command = ["bash", "scripts/check-public-header.sh"]
 depends_on = ["build"]
 
+[tasks.registry-metadata-tests]
+description = "Verify Kernel Registry metadata and link-free package publication"
+command = ["python", "-m", "unittest", "discover", "-s", "tests", "-p", "test_registry_metadata.py"]
+depends_on = ["build"]
+
 [tasks.check]
 description = "Run the complete local quality gate"
 command = ["git", "diff", "--check"]
-depends_on = ["test", "quickstart", "header"]
+depends_on = ["test", "quickstart", "header", "registry-metadata-tests"]
