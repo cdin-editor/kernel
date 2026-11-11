@@ -132,3 +132,17 @@ else
   (cd "$dist" && shasum -a 256 "$(basename "$asset")" > "$(basename "$asset").sha256")
 fi
 printf 'Created %s and its SHA-256 checksum.\n' "$asset"
+
+# Publish a second archive whose contents start at include/, lib/, bin/ and
+# share/. Registry extracts this directly into its cmake-prefix-v1 package path.
+if [[ "$platform" == windows ]]; then
+  registry_asset="$dist/${asset_base}-cmake-prefix.zip"
+  registry_format=zip
+else
+  registry_asset="$dist/${asset_base}-cmake-prefix.tar.gz"
+  registry_format=tar.gz
+fi
+python scripts/package_registry_prefix.py \
+  --prefix "$package_root" \
+  --output "$registry_asset" \
+  --format "$registry_format"
