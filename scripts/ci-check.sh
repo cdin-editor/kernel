@@ -6,3 +6,7 @@ make clean
 make all shared ffi-shared quickstart
 make check
 bash scripts/check-public-header.sh
+
+# Keep the Registry publication contract covered by the normal repository gate.
+python -m unittest discover -s tests -p "test_registry_metadata.py"
+python -m unittest discover -s tests -p "test_package_links.py"
