@@ -6,7 +6,7 @@ import argparse
 import hashlib
 import json
 import os
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 import re
 import stat
 import subprocess
@@ -90,8 +90,14 @@ def _safe_archive_name(raw: str) -> str:
     parts = name.split("/")
     if any(part in ("", ".", "..") for part in parts):
         raise MetadataError(f"non-canonical archive path: {raw!r}")
-    if len(name) >= 2 and name[1] == ":":
-        raise MetadataError(f"drive-qualified archive path: {raw!r}")
+    if any(ord(char) < 32 or ord(char) == 127 for char in name) or ":" in name:
+        raise MetadataError(f"non-portable archive path: {raw!r}")
+    for part in parts:
+        if part.endswith((".", " ")):
+            raise MetadataError(f"non-portable archive path segment: {part!r}")
+        stem = part.split(".", 1)[0].upper()
+        if stem in {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}:
+            raise MetadataError(f"reserved Windows device name in archive path: {raw!r}")
     return name
 
 
@@ -128,13 +134,25 @@ def _read_tar_build_info(path: Path) -> str:
                     raise MetadataError(f"links and special entries are forbidden: {member.name}")
                 if member.mode & 0o7000:
                     raise MetadataError(f"privileged package mode is forbidden: {member.name}")
-            roots = {name.split("/", 1)[0] for name in names}
-            if len(roots) != 1:
-                raise MetadataError("package archive must contain exactly one top-level directory")
-            expected = next(iter(roots)) + "/BUILD-INFO.txt"
-            matches = [member for member in members if member.name == expected and member.isfile()]
+            paths = {_safe_archive_name(name) for name in names}
+            required = {
+                "BUILD-INFO.txt",
+                "include/cdin/kernel.h",
+                "include/m-mdy-m/log.h",
+                "lib/libcdin_kernel.a",
+                "lib/libm-mdy-m-log.a",
+                "lib/pkgconfig/cdin-kernel.pc",
+                "lib/pkgconfig/m-mdy-m-log.pc",
+            }
+            missing = sorted(required - paths)
+            if missing:
+                raise MetadataError(
+                    "cmake-prefix-v1 archive must expose the install prefix at its root; "
+                    "missing: " + ", ".join(missing)
+                )
+            matches = [member for member in members if member.name == "BUILD-INFO.txt" and member.isfile()]
             if len(matches) != 1:
-                raise MetadataError("package archive must contain exactly one top-level BUILD-INFO.txt")
+                raise MetadataError("cmake-prefix-v1 archive must contain exactly one root BUILD-INFO.txt")
             stream = archive.extractfile(matches[0])
             if stream is None:
                 raise MetadataError("cannot read package BUILD-INFO.txt")
@@ -161,13 +179,25 @@ def _read_zip_build_info(path: Path) -> str:
                     raise MetadataError(f"privileged package mode is forbidden: {item.filename}")
                 if item.is_dir() and item.file_size != 0:
                     raise MetadataError(f"package directory entry is not empty: {item.filename}")
-            roots = {name.rstrip("/").split("/", 1)[0] for name in names}
-            if len(roots) != 1:
-                raise MetadataError("package archive must contain exactly one top-level directory")
-            expected = next(iter(roots)) + "/BUILD-INFO.txt"
-            matches = [item for item in infos if item.filename == expected and not item.is_dir()]
+            paths = {_safe_archive_name(name) for name in names}
+            required = {
+                "BUILD-INFO.txt",
+                "include/cdin/kernel.h",
+                "include/m-mdy-m/log.h",
+                "lib/libcdin_kernel.a",
+                "lib/libm-mdy-m-log.a",
+                "lib/pkgconfig/cdin-kernel.pc",
+                "lib/pkgconfig/m-mdy-m-log.pc",
+            }
+            missing = sorted(required - paths)
+            if missing:
+                raise MetadataError(
+                    "cmake-prefix-v1 archive must expose the install prefix at its root; "
+                    "missing: " + ", ".join(missing)
+                )
+            matches = [item for item in infos if item.filename == "BUILD-INFO.txt" and not item.is_dir()]
             if len(matches) != 1:
-                raise MetadataError("package archive must contain exactly one top-level BUILD-INFO.txt")
+                raise MetadataError("cmake-prefix-v1 archive must contain exactly one root BUILD-INFO.txt")
             data = archive.read(matches[0])
             if len(data) > 64 * 1024:
                 raise MetadataError("package BUILD-INFO.txt exceeds 64 KiB")
@@ -221,8 +251,11 @@ def _find_one(root: Path, filename: str) -> Path:
 
 
 def _expected_filename(version: str, target: dict[str, str]) -> str:
-    architecture = target["architecture"].replace("_", "_")
-    return f"cdin-kernel-{version}-{target['platform']}-{architecture}{target['extension']}"
+    architecture = target["architecture"]
+    return (
+        f"cdin-kernel-{version}-{target['platform']}-{architecture}"
+        f"-cmake-prefix{target['extension']}"
+    )
 
 
 def build_metadata(
@@ -249,7 +282,7 @@ def build_metadata(
     artifacts: list[dict[str, object]] = []
     expected_filenames = {_expected_filename(version, target) for target in TARGETS}
     found_archive_files = [
-        path for path in artifact_dir.rglob(f"cdin-kernel-{version}-*")
+        path for path in artifact_dir.rglob(f"cdin-kernel-{version}-*-cmake-prefix.*")
         if path.is_file() and path.name.endswith((".tar.gz", ".zip"))
     ]
     actual_filenames = {path.name for path in found_archive_files}
@@ -257,7 +290,19 @@ def build_metadata(
         missing = sorted(expected_filenames - actual_filenames)
         unexpected = sorted(actual_filenames - expected_filenames)
         raise MetadataError(
-            f"release inventory must contain exactly five native archives; missing={missing}, unexpected={unexpected}"
+            f"Registry package inventory must contain exactly five cmake-prefix archives; "
+            f"missing={missing}, unexpected={unexpected}"
+        )
+    expected_sidecars = {name + ".sha256" for name in expected_filenames}
+    actual_sidecars = {
+        path.name for path in artifact_dir.rglob("cdin-kernel-*.sha256")
+        if path.is_file() and "-cmake-prefix." in path.name
+    }
+    if actual_sidecars != expected_sidecars:
+        missing = sorted(expected_sidecars - actual_sidecars)
+        unexpected = sorted(actual_sidecars - expected_sidecars)
+        raise MetadataError(
+            f"Registry package checksum inventory mismatch; missing={missing}, unexpected={unexpected}"
         )
 
     encoded_tag = quote(tag, safe=".-")
