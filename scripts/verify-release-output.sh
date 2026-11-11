@@ -10,59 +10,68 @@ host="$(uname -s 2>/dev/null || printf unknown)"
 arch="$(uname -m 2>/dev/null || printf unknown)"
 case "$host" in
   Linux*) platform=linux ;;
-  Darwin*) platform=macos ;;
+  Darwin) platform=macos ;;
   MINGW*|MSYS*|CYGWIN*) platform=windows ;;
   *) echo "unsupported packaging host: $host" >&2; exit 2 ;;
 esac
 case "$arch" in
-  amd64|x64) arch=x86_64 ;;
-  aarch64) arch=arm64 ;;
+  amd64|x64|AMD64) arch=x86_64 ;;
+  aarch64|arm64) arch=arm64 ;;
+  *) echo "unsupported packaging architecture: $arch" >&2; exit 2 ;;
 esac
 
 asset_base="cdin-kernel-${PACKAGE_VERSION}-${platform}-${arch}"
 if [[ "$platform" == windows ]]; then
   archive_name="${asset_base}.zip"
+  registry_archive_name="${asset_base}-cmake-prefix.zip"
 else
   archive_name="${asset_base}.tar.gz"
+  registry_archive_name="${asset_base}-cmake-prefix.tar.gz"
 fi
 checksum_name="${archive_name}.sha256"
+registry_checksum_name="${registry_archive_name}.sha256"
+expected=("$archive_name" "$checksum_name" "$registry_archive_name" "$registry_checksum_name")
 
-# Fail closed: a target must contribute exactly one archive and its matching
-# checksum. Loose files and directories must never become release assets.
+# Each target contributes the existing user archive and a separate flat
+# cmake-prefix-v1 Registry package, each with its own verified checksum.
 shopt -s nullglob
 entries=("$dist"/*)
-if [[ ${#entries[@]} -ne 2 ]]; then
-  printf 'expected exactly 2 release output files in %s, found %s\n' "$dist" "${#entries[@]}" >&2
+if [[ ${#entries[@]} -ne ${#expected[@]} ]]; then
+  printf 'expected exactly %s release output files in %s, found %s\n' \
+    "${#expected[@]}" "$dist" "${#entries[@]}" >&2
   printf '  %s\n' "${entries[@]}" >&2
   exit 1
 fi
 
-archive_found=0
-checksum_found=0
+for name in "${expected[@]}"; do
+  path="$dist/$name"
+  [[ -f "$path" && ! -L "$path" ]] || {
+    echo "missing or unsafe release output: $path" >&2
+    exit 1
+  }
+done
+
 for entry in "${entries[@]}"; do
   if [[ ! -f "$entry" || -L "$entry" ]]; then
     echo "release output must contain regular files only: $entry" >&2
     exit 1
   fi
-  case "$(basename "$entry")" in
-    "$archive_name") archive_found=1 ;;
-    "$checksum_name") checksum_found=1 ;;
-    *) echo "unexpected release output: $entry" >&2; exit 1 ;;
-  esac
+  name="$(basename "$entry")"
+  found=0
+  for expected_name in "${expected[@]}"; do
+    [[ "$name" == "$expected_name" ]] && found=1
+  done
+  [[ "$found" -eq 1 ]] || { echo "unexpected release output: $entry" >&2; exit 1; }
 done
 
-[[ "$archive_found" -eq 1 && "$checksum_found" -eq 1 ]] || {
-  echo "missing expected archive or checksum for ${platform}/${arch}" >&2
-  exit 1
-}
-
 if command -v sha256sum >/dev/null 2>&1; then
-  (cd "$dist" && sha256sum -c "$checksum_name")
+  (cd "$dist" && sha256sum -c "$checksum_name" && sha256sum -c "$registry_checksum_name")
 elif command -v shasum >/dev/null 2>&1; then
-  (cd "$dist" && shasum -a 256 -c "$checksum_name")
+  (cd "$dist" && shasum -a 256 -c "$checksum_name" && shasum -a 256 -c "$registry_checksum_name")
 else
-  echo 'neither sha256sum nor shasum is available to verify the release archive' >&2
+  echo 'neither sha256sum nor shasum is available to verify release archives' >&2
   exit 2
 fi
 
-printf 'Release output verified: %s and %s\n' "$archive_name" "$checksum_name"
+printf 'Release output verified: %s, %s and matching checksums\n' \
+  "$archive_name" "$registry_archive_name"

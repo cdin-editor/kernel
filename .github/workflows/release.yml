@@ -27,11 +27,17 @@ jobs:
         dist/cdin-kernel-*.zip.sha256
         dist/cdin-kernel-*.tar.gz
         dist/cdin-kernel-*.tar.gz.sha256
+      asset-preparation-command: >-
+        python scripts/generate_registry_metadata.py
+        --tag "$PIPELINE_RELEASE_TAG"
+        --source-revision "$PIPELINE_SOURCE_SHA"
+        --artifact-dir "$RELEASE_ASSETS_DIRECTORY"
+        --output "$RELEASE_ASSETS_DIRECTORY/release-build-metadata/kernel-$PIPELINE_RELEASE_VERSION.json"
       build-matrix-json: >-
         {"include":[
           {"id":"linux-x86_64","os":"ubuntu-24.04"},
           {"id":"linux-arm64","os":"ubuntu-24.04-arm"},
           {"id":"macos-arm64","os":"macos-15"},
           {"id":"macos-x86_64","os":"macos-15-intel"},
-          {"id":"windows-x86_64-ucrt64","os":"windows-latest","msys2_msystem":"UCRT64","msys2_packages":"git mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-pkgconf make zip unzip"}
+          {"id":"windows-x86_64-ucrt64","os":"windows-latest","msys2_msystem":"UCRT64","msys2_packages":"git mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-pkgconf mingw-w64-ucrt-x86_64-python make zip unzip"}
         ]}
