@@ -7,7 +7,7 @@ if [[ $# -ne 2 ]]; then
 fi
 archive="$(cd "$(dirname "$1")" && pwd -P)/$(basename "$1")"
 expected_version="$2"
-repo_root="$(cd "$(dirname "\${BASH_SOURCE[0]}")/.." && pwd -P)"
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 host="$(uname -s 2>/dev/null || printf unknown)"
