@@ -24,7 +24,7 @@ class RegistryPrefixArchiveTests(unittest.TestCase):
         self.prefix = Path(self.temporary.name) / "prefix"
         self.prefix.mkdir()
         files = {
-            "BUILD-INFO.txt": b"Package version: 1.2.3\\n",
+            "BUILD-INFO.txt": b"Package version: 1.2.3\n",
             "include/cdin/kernel.h": b"kernel header",
             "include/m-mdy-m/log.h": b"logger header",
             "lib/libcdin_kernel.a": b"kernel library",
@@ -53,7 +53,7 @@ class RegistryPrefixArchiveTests(unittest.TestCase):
         self.assertEqual(digest, hashlib.sha256(output.read_bytes()).hexdigest())
         self.assertEqual(
             (Path(str(output) + ".sha256")).read_text(encoding="ascii"),
-            f"{digest}  {output.name}\\n",
+            f"{digest}  {output.name}\n",
         )
 
     def test_zip_starts_at_install_prefix(self) -> None:
