@@ -65,9 +65,9 @@ for entry in "${entries[@]}"; do
 done
 
 if command -v sha256sum >/dev/null 2>&1; then
-  (cd "$dist" && sha256sum -c "$checksum_name" "$registry_checksum_name")
+  (cd "$dist" && sha256sum -c "$checksum_name" && sha256sum -c "$registry_checksum_name")
 elif command -v shasum >/dev/null 2>&1; then
-  (cd "$dist" && shasum -a 256 -c "$checksum_name" "$registry_checksum_name")
+  (cd "$dist" && shasum -a 256 -c "$checksum_name" && shasum -a 256 -c "$registry_checksum_name")
 else
   echo 'neither sha256sum nor shasum is available to verify release archives' >&2
   exit 2
