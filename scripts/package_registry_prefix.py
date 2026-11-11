@@ -90,7 +90,7 @@ def _zip_timestamp(epoch: int) -> tuple[int, int, int, int, int, int]:
 
 
 def write_prefix_archive(prefix: Path, output: Path, archive_format: str) -> tuple[str, int]:
-    prefix = prefix.resolve(strict=True)
+    # _entries rejects a symlinked root before canonicalizing it.
     entries = _entries(prefix)
     output.parent.mkdir(parents=True, exist_ok=True)
     temporary = output.with_name(output.name + ".tmp")
