@@ -5,6 +5,21 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [1.2.3] - 2026-11-13
+
+### Added
+
+- Add flat, target-native `cmake-prefix-v1` Registry package archives for Linux x86_64/ARM64, macOS x86_64/ARM64 and Windows x86_64 UCRT64 alongside the existing user-download archives.
+- Generate immutable Kernel Component Release Metadata (`kernel-1.2.3.json`) from the exact tagged source commit after all five Registry archives and SHA-256 sidecars are verified. Record the package source, Kernel ABI, target OS/architecture/ABI, archive size and digest, and build provenance.
+- Add strict archive-layout, package-consumer and metadata-generation tests to the normal quality gate, including static and shared consumer builds from the flat install prefix.
+
+### Changed
+
+- Preserve the existing user-download archive layout and installer while publishing the separate flat Registry install-prefix archives; previously published Releases and metadata snapshots remain immutable.
+- Keep the package release version `1.2.3` independent from the public Kernel C ABI `1.1.0` and Kernel Spec target `1.1.0`. This is a package/distribution update, not a public ABI change.
+
 ## [1.2.2] - 2026-11-09
 
 ### Added
