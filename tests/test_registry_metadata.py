@@ -7,12 +7,14 @@ import stat
 import tarfile
 import tempfile
 import unittest
+from unittest import mock
 import zipfile
 
 from scripts.generate_registry_metadata import (
     MetadataError,
     TARGETS,
     build_metadata,
+    resolve_source_revision,
 )
 
 
@@ -109,6 +111,68 @@ class RegistryMetadataTests(unittest.TestCase):
     def _all_archives(self) -> None:
         for target in TARGETS:
             self._write_archive(target)
+
+    def test_dry_run_uses_head_without_resolving_synthetic_tag(self) -> None:
+        calls: list[list[str]] = []
+
+        def git_output(command: list[str], **_: object) -> str:
+            calls.append(command)
+            return self.revision + "\\n"
+
+        with mock.patch(
+            "scripts.generate_registry_metadata.subprocess.check_output",
+            side_effect=git_output,
+        ):
+            resolved = resolve_source_revision(
+                tag="v0.0.0-dev.deadbeef",
+                source_revision=self.revision,
+                dry_run=True,
+            )
+
+        self.assertEqual(resolved, self.revision)
+        self.assertEqual(calls, [["git", "rev-parse", "--verify", "HEAD"]])
+
+    def test_dry_run_rejects_pipeline_source_that_differs_from_head(self) -> None:
+        with mock.patch(
+            "scripts.generate_registry_metadata.subprocess.check_output",
+            return_value=self.revision + "\\n",
+        ):
+            with self.assertRaisesRegex(MetadataError, "dry-run source mismatch"):
+                resolve_source_revision(
+                    tag="v0.0.0-dev.deadbeef",
+                    source_revision="b" * 40,
+                    dry_run=True,
+                )
+
+    def test_real_release_still_requires_tag_head_and_pipeline_to_match(self) -> None:
+        calls = iter((self.revision + "\\n", self.revision + "\\n"))
+        with mock.patch(
+            "scripts.generate_registry_metadata.subprocess.check_output",
+            side_effect=lambda *_args, **_kwargs: next(calls),
+        ) as git:
+            resolved = resolve_source_revision(
+                tag=f"v{self.version}",
+                source_revision=self.revision,
+                dry_run=False,
+            )
+
+        self.assertEqual(resolved, self.revision)
+        self.assertEqual(git.call_count, 2)
+
+    def test_real_release_rejects_missing_tag(self) -> None:
+        with mock.patch(
+            "scripts.generate_registry_metadata.subprocess.check_output",
+            side_effect=[
+                self.revision + "\\n",
+                __import__("subprocess").CalledProcessError(128, ["git", "rev-parse"]),
+            ],
+        ):
+            with self.assertRaisesRegex(MetadataError, "cannot resolve release tag"):
+                resolve_source_revision(
+                    tag=f"v{self.version}",
+                    source_revision=self.revision,
+                    dry_run=False,
+                )
 
     def test_generates_complete_component_release_metadata(self) -> None:
         self._all_archives()
