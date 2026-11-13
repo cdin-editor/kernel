@@ -4,6 +4,7 @@ import hashlib
 import io
 from pathlib import Path
 import stat
+import subprocess
 import tarfile
 import tempfile
 import unittest
@@ -164,7 +165,7 @@ class RegistryMetadataTests(unittest.TestCase):
             "scripts.generate_registry_metadata.subprocess.check_output",
             side_effect=[
                 self.revision + "\\n",
-                __import__("subprocess").CalledProcessError(128, ["git", "rev-parse"]),
+                subprocess.CalledProcessError(128, ["git", "rev-parse"]),
             ],
         ):
             with self.assertRaisesRegex(MetadataError, "cannot resolve release tag"):
