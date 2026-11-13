@@ -64,14 +64,39 @@ for entry in "${entries[@]}"; do
   [[ "$found" -eq 1 ]] || { echo "unexpected release output: $entry" >&2; exit 1; }
 done
 
-if command -v sha256sum >/dev/null 2>&1; then
-  (cd "$dist" && sha256sum -c "$checksum_name" && sha256sum -c "$registry_checksum_name")
-elif command -v shasum >/dev/null 2>&1; then
-  (cd "$dist" && shasum -a 256 -c "$checksum_name" && shasum -a 256 -c "$registry_checksum_name")
-else
-  echo 'neither sha256sum nor shasum is available to verify release archives' >&2
-  exit 2
-fi
+# Parse checksum sidecars with Python instead of sha256sum -c. MSYS2
+# may translate LF sidecars to CRLF, which sha256sum treats as part of the
+# filename on Windows. split() normalizes both formats without weakening the
+# digest or filename checks.
+python3 - "$dist/$archive_name" "$dist/$checksum_name" \
+  "$dist/$registry_archive_name" "$dist/$registry_checksum_name" <<'PY'
+import hashlib
+import sys
+from pathlib import Path
+
+for archive_arg, sidecar_arg in zip(sys.argv[1::2], sys.argv[2::2]):
+    archive = Path(archive_arg)
+    sidecar = Path(sidecar_arg)
+    fields = sidecar.read_text(encoding="ascii").split()
+    if len(fields) < 2:
+        raise SystemExit(f"{sidecar}: malformed checksum sidecar")
+    expected_digest = fields[0].lower()
+    expected_name = fields[1].lstrip("*")
+    if expected_name != archive.name:
+        raise SystemExit(
+            f"{sidecar}: checksum filename {expected_name!r} != {archive.name!r}"
+        )
+    digest = hashlib.sha256()
+    with archive.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    actual_digest = digest.hexdigest()
+    if actual_digest != expected_digest:
+        raise SystemExit(
+            f"{archive}: SHA-256 mismatch: expected {expected_digest}, got {actual_digest}"
+        )
+    print(f"{archive.name}: OK")
+PY
 
 printf 'Release output verified: %s, %s and matching checksums\n' \
   "$archive_name" "$registry_archive_name"
