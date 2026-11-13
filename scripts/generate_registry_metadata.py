@@ -127,7 +127,14 @@ def _read_tar_build_info(path: Path) -> str:
     try:
         with tarfile.open(path, mode="r:gz") as archive:
             members = archive.getmembers()
-            names = [member.name for member in members]
+            # TAR directory entries do not have to end in "/". Preserve their
+            # type for the path validator, which uses that suffix to distinguish
+            # directories from regular files.
+            names = [
+                member.name if not member.isdir() or member.name.endswith("/")
+                else member.name + "/"
+                for member in members
+            ]
             _validate_archive_paths(names)
             for member in members:
                 if not (member.isfile() or member.isdir()):
