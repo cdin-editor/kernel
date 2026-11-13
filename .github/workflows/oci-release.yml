@@ -2,6 +2,7 @@ name: Publish multi-platform GHCR packages
 
 on:
   push:
+    branches: ["**"]
     tags: ["v*"]
   workflow_dispatch:
     inputs:
@@ -31,8 +32,8 @@ jobs:
       package-name: cdin-kernel
       component-id: cdin-kernel
       variant: default
-      version: ${{ inputs.version || '' }}
-      dry-run: ${{ github.event_name == 'workflow_dispatch' && inputs.publish != true }}
+      version: ${{ github.event_name == 'push' && github.ref_type == 'branch' && format('0.0.0-dev.{0}', github.run_number) || inputs.version || '' }}
+      dry-run: ${{ github.ref_type != 'tag' || (github.event_name == 'workflow_dispatch' && inputs.publish != true) }}
       test-command: bash scripts/ci-check.sh
       build-command: |
         set -euo pipefail
@@ -42,7 +43,7 @@ jobs:
           release_tag="v${{ inputs.version }}"
         fi
         PIPELINE_RELEASE_TAG="$release_tag" bash scripts/ci-package.sh
-      artifact-path: dist/cdin-kernel-*.tar.gz
+      artifact-path: dist/cdin-kernel-*-cmake-prefix.tar.gz
       artifact-media-type: application/vnd.pipeline.package.layer.v1.tar+gzip
       build-matrix-json: >-
         {"include":[
@@ -52,7 +53,7 @@ jobs:
             "target_os":"linux",
             "architecture":"x86_64",
             "abi":"gnu",
-            "artifact_path":"dist/cdin-kernel-*.tar.gz",
+            "artifact_path":"dist/cdin-kernel-*-cmake-prefix.tar.gz",
             "artifact_media_type":"application/vnd.pipeline.package.layer.v1.tar+gzip"
           },
           {
@@ -61,7 +62,7 @@ jobs:
             "target_os":"linux",
             "architecture":"arm64",
             "abi":"gnu",
-            "artifact_path":"dist/cdin-kernel-*.tar.gz",
+            "artifact_path":"dist/cdin-kernel-*-cmake-prefix.tar.gz",
             "artifact_media_type":"application/vnd.pipeline.package.layer.v1.tar+gzip"
           },
           {
@@ -70,7 +71,7 @@ jobs:
             "target_os":"macos",
             "architecture":"x86_64",
             "abi":"darwin",
-            "artifact_path":"dist/cdin-kernel-*.tar.gz",
+            "artifact_path":"dist/cdin-kernel-*-cmake-prefix.tar.gz",
             "artifact_media_type":"application/vnd.pipeline.package.layer.v1.tar+gzip"
           },
           {
@@ -79,7 +80,7 @@ jobs:
             "target_os":"macos",
             "architecture":"arm64",
             "abi":"darwin",
-            "artifact_path":"dist/cdin-kernel-*.tar.gz",
+            "artifact_path":"dist/cdin-kernel-*-cmake-prefix.tar.gz",
             "artifact_media_type":"application/vnd.pipeline.package.layer.v1.tar+gzip"
           },
           {
@@ -90,7 +91,7 @@ jobs:
             "abi":"ucrt64",
             "msys2_msystem":"UCRT64",
             "msys2_packages":"git mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-pkgconf make zip unzip",
-            "artifact_path":"dist/cdin-kernel-*.zip",
+            "artifact_path":"dist/cdin-kernel-*-cmake-prefix.zip",
             "artifact_media_type":"application/zip"
           }
         ]}
