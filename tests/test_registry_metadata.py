@@ -14,6 +14,7 @@ import zipfile
 from scripts.generate_registry_metadata import (
     MetadataError,
     TARGETS,
+    _validate_archive_paths,
     build_metadata,
     resolve_source_revision,
 )
@@ -47,6 +48,7 @@ class RegistryMetadataTests(unittest.TestCase):
     def _package_files(self, target: dict[str, str]) -> dict[str, bytes]:
         files = {
             "BUILD-INFO.txt": self._build_info(target),
+            "docs/abi.md": b"ABI documentation",
             "include/cdin/kernel.h": b"kernel header",
             "include/m-mdy-m/log.h": b"logger header",
             "lib/libcdin_kernel.a": b"kernel archive",
@@ -92,6 +94,20 @@ class RegistryMetadataTests(unittest.TestCase):
                     archive.writestr(info, b"../../outside")
         else:
             with tarfile.open(path, "w:gz", format=tarfile.PAX_FORMAT) as archive:
+                directories = sorted(
+                    {
+                        parent.as_posix()
+                        for name in files
+                        for parent in Path(name).parents
+                        if parent != Path(".")
+                    },
+                    key=lambda item: (item.count("/"), item),
+                )
+                for name in directories:
+                    item = tarfile.TarInfo(prefix + name)
+                    item.type = tarfile.DIRTYPE
+                    item.mode = 0o755
+                    archive.addfile(item)
                 for name, data in sorted(files.items()):
                     item = tarfile.TarInfo(prefix + name)
                     item.size = len(data)
@@ -112,6 +128,13 @@ class RegistryMetadataTests(unittest.TestCase):
     def _all_archives(self) -> None:
         for target in TARGETS:
             self._write_archive(target)
+
+    def test_archive_path_validation_distinguishes_tar_directories_from_files(self) -> None:
+        # TAR stores directory type separately; a directory name need not end
+        # in "/". The reader normalizes that metadata before validation.
+        _validate_archive_paths(["docs/", "docs/abi.md"])
+        with self.assertRaisesRegex(MetadataError, "file/directory path collision"):
+            _validate_archive_paths(["docs", "docs/abi.md"])
 
     def test_dry_run_uses_head_without_resolving_synthetic_tag(self) -> None:
         calls: list[list[str]] = []
