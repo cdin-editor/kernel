@@ -2,6 +2,7 @@ name: Build and publish release
 
 on:
   push:
+    branches: ["**"]
     tags: ["v*"]
   workflow_dispatch:
 
@@ -15,10 +16,11 @@ jobs:
       contents: write
       id-token: write
       attestations: write
-    uses: m-mdy-m/pipeline/.github/workflows/release.yml@main
+    uses: m-mdy-m/pipeline/.github/workflows/release.yml@75c09b9e6962f3d037198cf72796daf2a35bfb03
     with:
-      pipeline-ref: main
+      pipeline-ref: 75c09b9e6962f3d037198cf72796daf2a35bfb03
       changelog-path: CHANGELOG.md
+      dry-run: ${{ github.ref_type != 'tag' }}
       asset-profile: standard
       test-command: bash scripts/ci-check.sh
       build-command: bash scripts/ci-package.sh
