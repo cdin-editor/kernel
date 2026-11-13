@@ -436,6 +436,46 @@ def read_kernel_abi(header: Path) -> str:
     return ".".join(values[name] for name in ("MAJOR", "MINOR", "PATCH"))
 
 
+def resolve_source_revision(*, tag: str, source_revision: str, dry_run: bool) -> str:
+    """Bind metadata provenance to HEAD, requiring a real tag only for releases."""
+    try:
+        head_revision = subprocess.check_output(
+            ["git", "rev-parse", "--verify", "HEAD"],
+            text=True,
+            stderr=subprocess.PIPE,
+        ).strip()
+    except subprocess.CalledProcessError as error:
+        raise MetadataError(f"cannot resolve checked-out HEAD: {error}") from error
+
+    if not GIT_REVISION.fullmatch(head_revision):
+        raise MetadataError("checked-out HEAD must resolve to a full lowercase Git commit ID")
+
+    if dry_run:
+        if source_revision != head_revision:
+            raise MetadataError(
+                f"dry-run source mismatch: HEAD={head_revision}, Pipeline source={source_revision}"
+            )
+        return head_revision
+
+    try:
+        tag_revision = subprocess.check_output(
+            ["git", "rev-parse", "--verify", f"refs/tags/{tag}^{{commit}}"],
+            text=True,
+            stderr=subprocess.PIPE,
+        ).strip()
+    except subprocess.CalledProcessError as error:
+        raise MetadataError(f"cannot resolve release tag {tag!r}: {error}") from error
+
+    if not GIT_REVISION.fullmatch(tag_revision):
+        raise MetadataError("release tag must resolve to a full lowercase Git commit ID")
+    if tag_revision != source_revision or head_revision != tag_revision:
+        raise MetadataError(
+            f"release source mismatch: tag={tag_revision}, HEAD={head_revision}, "
+            f"Pipeline source={source_revision}"
+        )
+    return tag_revision
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--tag", default=os.environ.get("PIPELINE_RELEASE_TAG", ""))
@@ -447,28 +487,23 @@ def main() -> int:
 
     if not args.tag or not args.source_revision:
         parser.error("--tag and --source-revision are required (or set Pipeline release variables)")
+    dry_run = (
+        os.environ.get("PIPELINE_DRY_RUN", "false").strip().lower() == "true"
+        and os.environ.get("GITHUB_REF_TYPE", "branch") != "tag"
+    )
     try:
-        tag_revision = subprocess.check_output(
-            ["git", "rev-parse", "--verify", f"refs/tags/{args.tag}^{{commit}}"],
-            text=True,
-            stderr=subprocess.PIPE,
-        ).strip()
-        head_revision = subprocess.check_output(
-            ["git", "rev-parse", "--verify", "HEAD"],
-            text=True,
-            stderr=subprocess.PIPE,
-        ).strip()
-    except subprocess.CalledProcessError as error:
-        raise MetadataError(f"cannot resolve release tag or HEAD: {error}") from error
-    if tag_revision != args.source_revision or head_revision != tag_revision:
-        raise MetadataError(
-            f"release source mismatch: tag={tag_revision}, HEAD={head_revision}, "
-            f"Pipeline source={args.source_revision}"
+        resolved_revision = resolve_source_revision(
+            tag=args.tag,
+            source_revision=args.source_revision,
+            dry_run=dry_run,
         )
+    except MetadataError:
+        raise
+
 
     metadata = build_metadata(
         tag=args.tag,
-        source_revision=tag_revision,
+        source_revision=resolved_revision,
         artifact_dir=args.artifact_dir,
         kernel_abi=read_kernel_abi(args.header),
     )
