@@ -15,7 +15,7 @@ case "$host" in
   *) echo "unsupported packaging host: $host" >&2; exit 2 ;;
 esac
 case "$arch" in
-  amd64|x64|AMD64) arch=x86_64 ;;
+  x86_64|amd64|x64|AMD64) arch=x86_64 ;;
   aarch64|arm64) arch=arm64 ;;
   *) echo "unsupported packaging architecture: $arch" >&2; exit 2 ;;
 esac
