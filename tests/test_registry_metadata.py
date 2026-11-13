@@ -118,7 +118,7 @@ class RegistryMetadataTests(unittest.TestCase):
 
         def git_output(command: list[str], **_: object) -> str:
             calls.append(command)
-            return self.revision + "\\n"
+            return self.revision + "\n"
 
         with mock.patch(
             "scripts.generate_registry_metadata.subprocess.check_output",
@@ -136,7 +136,7 @@ class RegistryMetadataTests(unittest.TestCase):
     def test_dry_run_rejects_pipeline_source_that_differs_from_head(self) -> None:
         with mock.patch(
             "scripts.generate_registry_metadata.subprocess.check_output",
-            return_value=self.revision + "\\n",
+            return_value=self.revision + "\n",
         ):
             with self.assertRaisesRegex(MetadataError, "dry-run source mismatch"):
                 resolve_source_revision(
@@ -146,7 +146,7 @@ class RegistryMetadataTests(unittest.TestCase):
                 )
 
     def test_real_release_still_requires_tag_head_and_pipeline_to_match(self) -> None:
-        calls = iter((self.revision + "\\n", self.revision + "\\n"))
+        calls = iter((self.revision + "\n", self.revision + "\n"))
         with mock.patch(
             "scripts.generate_registry_metadata.subprocess.check_output",
             side_effect=lambda *_args, **_kwargs: next(calls),
@@ -164,7 +164,7 @@ class RegistryMetadataTests(unittest.TestCase):
         with mock.patch(
             "scripts.generate_registry_metadata.subprocess.check_output",
             side_effect=[
-                self.revision + "\\n",
+                self.revision + "\n",
                 subprocess.CalledProcessError(128, ["git", "rev-parse"]),
             ],
         ):
