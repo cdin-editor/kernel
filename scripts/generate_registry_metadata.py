@@ -491,14 +491,11 @@ def main() -> int:
         os.environ.get("PIPELINE_DRY_RUN", "false").strip().lower() == "true"
         and os.environ.get("GITHUB_REF_TYPE", "branch") != "tag"
     )
-    try:
-        resolved_revision = resolve_source_revision(
-            tag=args.tag,
-            source_revision=args.source_revision,
-            dry_run=dry_run,
-        )
-    except MetadataError:
-        raise
+    resolved_revision = resolve_source_revision(
+        tag=args.tag,
+        source_revision=args.source_revision,
+        dry_run=dry_run,
+    )
 
 
     metadata = build_metadata(
